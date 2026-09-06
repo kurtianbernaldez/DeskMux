@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      HAS_SIGNING_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Install installer compiler
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+      - name: Test and publish application
+        shell: pwsh
+        run: |
+          .\scripts\test.ps1 -Configuration Release
+          $display = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.1.0-alpha.1' }
+          .\scripts\package.ps1 -Configuration Release -Version $display
+      - name: Import optional signing certificate
+        if: env.HAS_SIGNING_CERTIFICATE == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $certificate = Join-Path $env:RUNNER_TEMP 'deskmux-signing.pfx'
+          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
+          .\scripts\sign.ps1 -Path .\artifacts\DeskMux-win-x64\DeskMux.exe -CertificatePath $certificate -CertificatePassword $env:WINDOWS_CERTIFICATE_PASSWORD
+      - name: Build release assets
+        shell: pwsh
+        run: |
+          $display = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.1.0-alpha.1' }
+          $numeric = (($display -split '-')[0] + '.0.0.0').Split('.')[0..3] -join '.'
+          .\scripts\build-release.ps1 -SkipPublish -RequireInstaller -DisplayVersion $display -FileVersion $numeric
+      - name: Sign installer and refresh checksums
+        if: env.HAS_SIGNING_CERTIFICATE == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $certificate = Join-Path $env:RUNNER_TEMP 'deskmux-signing.pfx'
+          .\scripts\sign.ps1 -Path .\artifacts\release\DeskMux-Setup-x64.exe -CertificatePath $certificate -CertificatePassword $env:WINDOWS_CERTIFICATE_PASSWORD
+          .\scripts\write-checksums.ps1
+      - name: Create GitHub release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = Get-ChildItem -LiteralPath .\artifacts\release -File | ForEach-Object FullName
+          $arguments = @('release', 'create', $env:GITHUB_REF_NAME) + $assets + @('--generate-notes', '--title', "DeskMux $env:GITHUB_REF_NAME")
+          if ($env:GITHUB_REF_NAME.Contains('-')) { $arguments += '--prerelease' }
+          gh @arguments
+      - uses: actions/upload-artifact@v7
+        if: github.ref_type != 'tag'
+        with:
+          name: DeskMux-release
+          path: artifacts/release/*

@@ -1,0 +1,33 @@
+name: Bug report
+description: Report a reproducible DeskMux problem
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please use recovery (Ctrl+Alt+Shift+F12) first if any managed window is hidden.
+  - type: input
+    id: version
+    attributes:
+      label: DeskMux version
+      placeholder: 0.1.0-alpha.1
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the applications, pane layout, displays, and keys involved.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Windows and display setup
+      placeholder: Windows version, monitor count, scale settings, and whether any app ran as administrator

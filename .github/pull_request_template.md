@@ -1,0 +1,1 @@
+Describe the Windows workflow this changes and the resulting behavior. Include validation performed and call out any effect on recovery, session persistence, window visibility, pane geometry, or keyboard handling.

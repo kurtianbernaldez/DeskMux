@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DeskMux.App/DeskMux.App.csproj" />
+    <Project Path="src/DeskMux.Core/DeskMux.Core.csproj" />
+    <Project Path="src/DeskMux.Windows/DeskMux.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DeskMux.Integration/DeskMux.Integration.csproj" />
+    <Project Path="tests/DeskMux.Tests/DeskMux.Tests.csproj" />
+  </Folder>
+</Solution>

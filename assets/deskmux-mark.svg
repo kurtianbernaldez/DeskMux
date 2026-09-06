@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">DeskMux</title>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#18d1bc"/>
+  <rect x="14" y="14" width="36" height="36" rx="2" fill="none" stroke="#07171d" stroke-width="4"/>
+  <path d="M35 14v36M35 32h15" fill="none" stroke="#07171d" stroke-width="4"/>
+</svg>
