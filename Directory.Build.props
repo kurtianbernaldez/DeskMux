@@ -13,7 +13,7 @@
     <Product>DeskMux</Product>
     <Description>Keyboard-first sessions and panes for native Windows applications.</Description>
     <Copyright>Copyright © 2026 Kurtian</Copyright>
-    <RepositoryUrl>https://github.com/kurtian/DeskMux</RepositoryUrl>
+    <RepositoryUrl>https://github.com/kurtianbernaldez/DeskMux</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 </Project>

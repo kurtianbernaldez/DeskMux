@@ -12,4 +12,4 @@ DeskMux follows [Semantic Versioning](https://semver.org/). Release notes on Git
 - Local persistence, crash recovery helper, emergency show-all command, and multi-monitor/DPI handling.
 - Configurable keyboard prefix and built-in or custom appearance themes.
 - Per-user installer definition, portable data mode, release checksums, optional code signing, and user-triggered update checks.
-- Static landing page for `deskmux.kurtian.dev` and GitHub CI, release, dependency, and Pages workflows.
+- Separate Coolify-ready landing-page repository for `deskmux.kurtian.dev`, plus GitHub CI, release, and dependency workflows.

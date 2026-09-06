@@ -5,11 +5,7 @@ artifacts/
 .vs/
 *.user
 TestResults/
-website/node_modules/
-website/.next/
-website/.vinext/
-website/dist/
-website/.wrangler/
+DeskMux Website/
 .idea/
 *.pfx
 *.p12

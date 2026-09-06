@@ -2,7 +2,7 @@
 
 **tmux-inspired sessions and panes for native Windows GUI applications.**
 
-[Website](https://deskmux.kurtian.dev) · [Downloads](https://github.com/kurtian/DeskMux/releases) · [Issues](https://github.com/kurtian/DeskMux/issues)
+[Website](https://deskmux.kurtian.dev) · [Downloads](https://github.com/kurtianbernaldez/DeskMux/releases) · [Issues](https://github.com/kurtianbernaldez/DeskMux/issues)
 
 DeskMux groups native application **windows** into named sessions. Arrange them in repeated horizontal and vertical splits, navigate between panes, resize, swap, and zoom with a short keyboard prefix. Fill panes with running windows or configured application launchers. Applications keep running; their windows return with their saved pane layout and focus history. Two Chrome windows can belong to different sessions even when they share a process.
 
@@ -10,7 +10,7 @@ DeskMux is a C#/.NET 10 WPF tray application for Windows 11 x64, with Windows 10
 
 ## Install
 
-Download **DeskMux-Setup-x64.exe** from the [latest GitHub release](https://github.com/kurtian/DeskMux/releases/latest). The per-user installer does not require administrator rights and can create optional desktop and sign-in shortcuts. Upgrades preserve sessions and settings. Uninstalling asks before deleting local DeskMux data.
+Download **DeskMux-Setup-x64.exe** from the [latest GitHub release](https://github.com/kurtianbernaldez/DeskMux/releases/latest). The per-user installer does not require administrator rights and can create optional desktop and sign-in shortcuts. Upgrades preserve sessions and settings. Uninstalling asks before deleting local DeskMux data.
 
 The **portable ZIP** is for USB drives, test copies, and users who prefer no installation. Extract the complete ZIP and run `DeskMux.exe`. Its `portable.mode` marker makes DeskMux store sessions, settings, recovery data, and logs in the adjacent `Data` folder. Move or back up the whole folder together. Removing the marker returns it to normal `%LOCALAPPDATA%\DeskMux` storage; `--portable` enables the same behavior from any development package.
 
@@ -226,14 +226,14 @@ Manual acceptance requires an unlocked Windows desktop and actual applications. 
 
 ## Releases and website
 
-Pushes and pull requests run the application checks and build the static website. Tags beginning with `v` create the Windows installer, portable ZIP, checksums, and a GitHub Release. For example:
+Pushes and pull requests run the application checks. Tags beginning with `v` create the Windows installer, portable ZIP, checksums, and a GitHub Release. For example:
 
 ```powershell
 git tag v0.1.0-alpha.1
 git push origin v0.1.0-alpha.1
 ```
 
-The landing-page source is in `website`. Its production files build into `website/dist/client`; its Dockerfile serves them as a separate Nginx container for Coolify at `deskmux.kurtian.dev`. The website is not included in either Windows download. See [website/DEPLOYMENT.md](website/DEPLOYMENT.md) for the Coolify settings, [CONTRIBUTING.md](CONTRIBUTING.md) for development guidance, and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
+The landing page is maintained separately in [kurtianbernaldez/deskmux-website](https://github.com/kurtianbernaldez/deskmux-website) and deployed through Coolify at `deskmux.kurtian.dev`. See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidance and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
 ## Roadmap
 
