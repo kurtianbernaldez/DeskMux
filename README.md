@@ -233,7 +233,7 @@ git tag v0.1.0-alpha.1
 git push origin v0.1.0-alpha.1
 ```
 
-The landing-page source is in `website`. Its production files build into `website/dist/client`, and the website workflow can publish them to GitHub Pages with the custom domain `deskmux.kurtian.dev`. See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidance and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
+The landing-page source is in `website`. Its production files build into `website/dist/client`; its Dockerfile serves them as a separate Nginx container for Coolify at `deskmux.kurtian.dev`. The website is not included in either Windows download. See [website/DEPLOYMENT.md](website/DEPLOYMENT.md) for the Coolify settings, [CONTRIBUTING.md](CONTRIBUTING.md) for development guidance, and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
 ## Roadmap
 
