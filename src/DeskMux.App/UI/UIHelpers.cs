@@ -4,6 +4,17 @@ using System.Windows.Input;
 
 namespace DeskMux.App.UI;
 
+internal abstract class ThemedWindow : Window
+{
+    protected ThemedWindow()
+    {
+        Background = ThemeManager.Brush("Background");
+        Foreground = ThemeManager.Brush("Ink");
+        FontFamily = Application.Current.Resources["UiFont"] as FontFamily ?? new FontFamily("Segoe UI");
+        FontSize = 14;
+    }
+}
+
 internal static class UIHelpers
 {
     internal static Brush Muted => ThemeManager.Brush("Muted");
@@ -22,8 +33,18 @@ internal static class UIHelpers
         if (settings.PrefixModifiers.HasFlag(PrefixModifiers.Alt)) parts.Add("Alt");
         if (settings.PrefixModifiers.HasFlag(PrefixModifiers.Shift)) parts.Add("Shift");
         if (settings.PrefixModifiers.HasFlag(PrefixModifiers.Windows)) parts.Add("Win");
-        parts.Add(KeyInterop.KeyFromVirtualKey(settings.PrefixVirtualKey).ToString()); return string.Join("+", parts);
+        parts.Add(KeyLabel(settings.PrefixVirtualKey)); return string.Join("+", parts);
     }
+    internal static string KeyLabel(int key) => key switch
+    {
+        0xDC => "\\", 0xBD => "−", 0xBB => "=", 0xDB => "[", 0xDD => "]",
+        0xDE => "'", 0xBA => ";", 0xBC => ",", 0xBE => ".", 0xBF => "/", 0xC0 => "`",
+        0xE2 => "\\", 0x1B => "Esc", 0x0D => "Enter", 0x20 => "Space",
+        0x25 => "←", 0x26 => "↑", 0x27 => "→", 0x28 => "↓",
+        >= 0x30 and <= 0x39 => ((char)key).ToString(),
+        _ => KeyInterop.KeyFromVirtualKey(key).ToString()
+    };
+
     internal static void ShowNearMonitor(Window window, IWindowSystem system, long source, bool activate)
     {
         var monitors = system.GetMonitors();

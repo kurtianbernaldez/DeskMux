@@ -10,6 +10,7 @@ public sealed partial class SessionManager
     private readonly Dictionary<long, DateTime> _lastRehideAttempt = [];
     public WorkspaceState State { get; }
     public WorkspaceSession? ActiveSession => State.Sessions.FirstOrDefault(s => s.Id == State.ActiveSessionId);
+    public bool IsFocused(ManagedWindow window) => !window.IsMissing && _windows.ForegroundWindow == window.Handle;
     public bool HidingPaused { get; private set; }
     public bool HasUnsavedChanges { get; private set; }
     public string? LastError { get; private set; }

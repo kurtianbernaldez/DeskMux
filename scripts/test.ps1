@@ -2,7 +2,7 @@ param([switch]$Integration, [ValidateSet('Debug','Release')][string]$Configurati
 . "$PSScriptRoot\common.ps1"
 Push-Location -LiteralPath $DeskMuxRoot
 try {
-    & "$PSScriptRoot\build.ps1" -Configuration $Configuration
+    & "$PSScriptRoot\build.ps1" -Configuration $Configuration -NoPackage
     Invoke-DeskMuxDotnet @('run', '--project', 'tests/DeskMux.Tests', '--configuration', $Configuration, '--no-build')
     if ($Integration) {
         Invoke-DeskMuxDotnet @('run', '--project', 'tests/DeskMux.Integration', '--configuration', $Configuration, '--no-build')

@@ -34,6 +34,29 @@ internal static class PaneUiChecks
         }
         try
         {
+            var updateTarget=Path.Combine(directory,"update-target");var updateSource=Path.Combine(directory,"update-source");Directory.CreateDirectory(updateTarget);Directory.CreateDirectory(updateSource);
+            File.WriteAllText(Path.Combine(updateTarget,"DeskMux.exe"),"old");File.WriteAllText(Path.Combine(updateSource,"DeskMux.exe"),"new");
+            Directory.CreateDirectory(Path.Combine(updateTarget,"Data"));File.WriteAllText(Path.Combine(updateTarget,"Data","sessions.json"),"keep my settings");
+            var updateScript=Path.Combine(directory,"apply.ps1");File.WriteAllText(updateScript,(string)typeof(UpdateInstaller).GetField("Script",BindingFlags.NonPublic|BindingFlags.Static)!.GetRawConstantValue()!);
+            var updateConfig=Path.Combine(directory,"update.json");File.WriteAllText(updateConfig,System.Text.Json.JsonSerializer.Serialize(new{Source=updateSource,Target=updateTarget,Data=Path.Combine(updateTarget,"Data"),Parent=2147483646,Restart=false,Files=new[]{"DeskMux.exe"}}));
+            var updateProcess=new System.Diagnostics.ProcessStartInfo("powershell.exe"){UseShellExecute=false,CreateNoWindow=true,WindowStyle=System.Diagnostics.ProcessWindowStyle.Hidden};foreach(var argument in new[]{"-NoProfile","-ExecutionPolicy","Bypass","-File",updateScript,"-Config",updateConfig})updateProcess.ArgumentList.Add(argument);
+            using(var updater=System.Diagnostics.Process.Start(updateProcess)!){Check(updater.WaitForExit(20000)&&updater.ExitCode==0,"Update helper completes for isolated install");}
+            Check(File.ReadAllText(Path.Combine(updateTarget,"DeskMux.exe"))=="new" && File.ReadAllText(Path.Combine(updateTarget,"Data","sessions.json"))=="keep my settings","Update replaces binaries and preserves portable settings");
+            Check(File.ReadAllText(Path.Combine(directory,"backup","DeskMux.exe"))=="old","Updater keeps rollback copy of previous binaries");
+            var guide = new PaneGuideOverlay(); owned.Add(guide);
+            var beforeGuide = GuideForeground();
+            guide.Update(new(20,20,600,400), new([new(Guid.NewGuid(),320,20,320,420)],new(20,20,300,400)),
+                new("#123456","#ABCDEF","#FEDCBA",2,.4), .4, new HashSet<Guid>());
+            Pump();
+            var guideHandle = new System.Windows.Interop.WindowInteropHelper(guide).Handle;
+            var guideFlags = GuideStyle(guideHandle,-20).ToInt64();
+            Check((guideFlags & (0x08000000 | 0x20 | 0x80 | 0x80000)) == (0x08000000 | 0x20 | 0x80 | 0x80000), "Pane guides use layered click-through no-activate tool windows");
+            Check(GuideForeground() == beforeGuide && !guide.Focusable && !guide.IsHitTestVisible, "Showing pane guides preserves foreground and excludes keyboard focus");
+            Check(GuideMessage(guideHandle,0x84,0,0) == new nint(-1), "Pane guide hit tests pass through");
+            Check(guide.Opacity == .4, "Native guide applies configured opacity");
+            guide.Update(new(20,20,600,400),new([],null),new("#123456","#ABCDEF","#FEDCBA",2,.4),0,new HashSet<Guid>());
+            Check(!guide.IsVisible, "Completed guide fade hides native overlay");
+            guide.Close();
             var monitorA = new MonitorDescriptor("A", new(-1600, 0, 1600, 900), new(-1600, 0, 1600, 860), 96, false);
             var monitorB = new MonitorDescriptor("B", new(0, 0, 2560, 1440), new(0, 0, 2560, 1400), 144, true);
             Check(UIHelpers.SelectMonitor([monitorA, monitorB], null, -400, 300) == monitorA,
@@ -68,6 +91,7 @@ internal static class PaneUiChecks
                 .Contains("Code ×2"), "Prefix overlay groups repeated application windows compactly");
 
             var empty = new PanePicker([], []); Show(empty);
+            Check(Text(empty).Contains("splits only the focused pane"), "Split picker explains focused-pane splitting");
             var emptyText = Text(empty);
             Check(emptyText.Contains("RUNNING WINDOWS") && emptyText.Contains("LAUNCH NEW"), "Empty Open pane picker retains both section headings");
             empty.HandleKey(0x28); empty.HandleKey(0x0D);
@@ -133,13 +157,20 @@ internal static class PaneUiChecks
             manager.Navigate("Launchers"); manager.UpdateLayout();
             Check(Text(manager).Contains("Test launcher") && Descendants<Button>(manager).Any(b => Equals(b.Content, "+  Add executable…")), "Manager exposes persisted launchers and executable selection");
             manager.Navigate("Hotkeys"); manager.UpdateLayout();
-            Check(Text(manager).Contains("Ctrl+Arrows") && Text(manager).Contains("Zoom / restore pane"), "Hotkeys page documents pane resize and zoom mappings");
+            Check(Text(manager).Contains("Resize pane left") && Text(manager).Contains("Zoom / restore pane"), "Hotkeys page documents pane resize and zoom mappings");
+            Check(Descendants<ComboBox>(manager).Count() == (Hotkeys.All.Count + 1)*2 && Text(manager).Contains("Release pane to floating"), "Every command and prefix has editable shortcut controls");
+            Check(Descendants<TextBox>(manager).Count(t=>t.IsReadOnly)==Hotkeys.All.Count+1 && Descendants<Button>(manager).Any(b=>Equals(b.Content,"Import shortcuts")) && Descendants<Button>(manager).Any(b=>Equals(b.Content,"Export shortcuts")),"Hotkeys expose recording and profile import/export");
+            var searchBox=Descendants<TextBox>(manager).First(t=>Equals(t.ToolTip,"Search commands"));searchBox.Text="Release";manager.UpdateLayout();
+            Check(Descendants<TextBlock>(manager).First(t=>t.Text.StartsWith("Release pane to floating")).IsVisible && !Descendants<TextBlock>(manager).First(t=>t.Text=="Next session").IsVisible,"Shortcut search filters commands without changing bindings");
+            searchBox.Text="";manager.UpdateLayout();
             manager.Navigate("Sessions"); manager.UpdateLayout();
+            Check(Descendants<Button>(manager).Any(b=>Equals(b.Content,"Undo layout")) && Descendants<Expander>(manager).Any(e=>Equals(e.Header,"Saved layouts")),"Session page exposes undo and layout presets");
             Check(Descendants<Button>(manager).Any(b => Equals(b.Content, "Release to floating")) && Descendants<Button>(manager).Any(b => Equals(b.Content, "Reapply layout")), "Manager exposes pane release and layout reapplication");
             Check(Descendants<Button>(manager).Any(b => Equals(b.Content, "Restore apps")), "Manager exposes session application restore");
             manager.Navigate("Behavior"); manager.UpdateLayout();
             Check(Descendants<CheckBox>(manager).Any(b => Equals(b.Content, "Restore missing applications in the active session when DeskMux starts")),
                 "Behavior page exposes optional startup restore");
+            Check(Text(manager).Contains("Pane guide visibility") && Descendants<ComboBox>(manager).Any(c=>c.Items.Contains("Always visible")), "Behavior exposes pane guide visibility modes");
             manager.Navigate("Appearance"); manager.UpdateLayout();
             var appearanceText=Text(manager);
             Check(ThemeManager.PresetNames.Contains("Dracula") && ThemeManager.PresetNames.Contains("Nord") && ThemeManager.PresetNames.Contains("Solarized Dark") &&
@@ -152,6 +183,13 @@ internal static class PaneUiChecks
             var accentBrush=ThemeManager.Brush("Accent"); controller.ApplyTheme("Dracula");
             Check(ReferenceEquals(accentBrush,ThemeManager.Brush("Accent")) && ((SolidColorBrush)accentBrush).Color==Color.FromRgb(0xBD,0x93,0xF9),
                 "Applying a theme updates existing shared UI brushes live");
+            var managerRoot=(Grid)manager.Content;
+            Check(ReferenceEquals(manager.Background,ThemeManager.Brush("Background")) && ReferenceEquals(managerRoot.Background,ThemeManager.Brush("Background")) &&
+                ((SolidColorBrush)managerRoot.Background).Color==Color.FromRgb(0x28,0x2A,0x36), "Dark theme colors the complete manager canvas");
+            var themePicker=Descendants<ComboBox>(manager).First(); themePicker.SelectedItem="Dracula"; manager.UpdateLayout();
+            var lightSwatch=Descendants<TextBlock>(manager).First(t=>t.Text.StartsWith("Text\n",StringComparison.Ordinal));
+            Check(lightSwatch.Foreground is SolidColorBrush swatchText && swatchText.Color==Colors.Black,
+                "Palette preview labels remain readable on light swatches");
             controller.ApplyTheme("System");
             manager.Close();
             Check(controller.Sessions.State.Sessions.All(s => s.Windows.Count == 0 && s.PaneCanvases.Count == 0), "UI verification leaves every unrelated application unmanaged");
@@ -163,6 +201,9 @@ internal static class PaneUiChecks
         return checks;
     }
 
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint="GetForegroundWindow")] private static extern nint GuideForeground();
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] private static extern nint GuideStyle(nint hwnd, int index);
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint="SendMessageW")] private static extern nint GuideMessage(nint hwnd,int message,nint w,nint l);
     private static string Text(DependencyObject root) => string.Join("\n", Descendants<TextBlock>(root).Select(t => t.Text));
     private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
     {

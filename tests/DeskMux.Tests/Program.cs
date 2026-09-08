@@ -295,6 +295,9 @@ Console.WriteLine($"\n{tests.Length - failed}/{tests.Length} logic tests passed.
 var paneResults = PaneTests.Run();
 failed += paneResults.Failed;
 failed += SessionPaneTests.Run();
+failed += GuideTests.Run();
+failed += HotkeyTests.Run();
+failed += WorkflowTests.Run();
 failed += LaunchTests.Run();
 return failed == 0 ? 0 : 1;
 
@@ -354,6 +357,8 @@ sealed class FakeWindows : IWindowSystem
     public bool FailShow { get; set; }
     public bool FailFocus { get; set; }
     public int LayoutCalls { get; private set; }
+    public Dictionary<long, PaneMinimumSize> MinimumSizes { get; } = [];
+    public PaneMinimumSize GetMinimumPaneSize(ManagedWindow window) => MinimumSizes.GetValueOrDefault(window.Handle) ?? new(PaneTree.MinimumWidth, PaneTree.MinimumHeight);
     public HashSet<int> FailLayoutCalls { get; } = [];
     public HashSet<long> ProtectedHandles { get; } = [];
     public Action<ManagedWindow>? BeforeLayout { get; set; }

@@ -25,7 +25,7 @@ jobs:
         shell: pwsh
         run: |
           .\scripts\test.ps1 -Configuration Release
-          $display = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.1.0-alpha.1' }
+          $display = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.1.0' }
           .\scripts\package.ps1 -Configuration Release -Version $display
       - name: Import optional signing certificate
         if: env.HAS_SIGNING_CERTIFICATE == 'true'
@@ -40,7 +40,7 @@ jobs:
       - name: Build release assets
         shell: pwsh
         run: |
-          $display = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.1.0-alpha.1' }
+          $display = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.1.0' }
           $numeric = (($display -split '-')[0] + '.0.0.0').Split('.')[0..3] -join '.'
           .\scripts\build-release.ps1 -SkipPublish -RequireInstaller -DisplayVersion $display -FileVersion $numeric
       - name: Sign installer and refresh checksums
@@ -53,6 +53,9 @@ jobs:
           $certificate = Join-Path $env:RUNNER_TEMP 'deskmux-signing.pfx'
           .\scripts\sign.ps1 -Path .\artifacts\release\DeskMux-Setup-x64.exe -CertificatePath $certificate -CertificatePassword $env:WINDOWS_CERTIFICATE_PASSWORD
           .\scripts\write-checksums.ps1
+      - name: Verify final release assets
+        shell: pwsh
+        run: .\scripts\test-release-assets.ps1
       - name: Create GitHub release
         if: github.ref_type == 'tag'
         shell: pwsh
@@ -60,7 +63,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $assets = Get-ChildItem -LiteralPath .\artifacts\release -File | ForEach-Object FullName
-          $arguments = @('release', 'create', $env:GITHUB_REF_NAME) + $assets + @('--generate-notes', '--title', "DeskMux $env:GITHUB_REF_NAME")
+          $arguments = @('release', 'create', $env:GITHUB_REF_NAME) + $assets + @('--notes-file', 'RELEASE_NOTES.md', '--title', "DeskMux $env:GITHUB_REF_NAME")
           if ($env:GITHUB_REF_NAME.Contains('-')) { $arguments += '--prerelease' }
           gh @arguments
       - uses: actions/upload-artifact@v7

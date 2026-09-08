@@ -9,7 +9,7 @@ internal sealed record PaneChoice(WindowSnapshot? Window, AppLaunchProfile? Laun
 }
 
 /// <summary>A non-activating picker. Every running HWND has its own explicit choice.</summary>
-internal sealed class PanePicker : Window, IKeyboardPicker
+internal sealed class PanePicker : ThemedWindow, IKeyboardPicker
 {
     private readonly ListBox _list = new() { MaxHeight = 480, BorderThickness = new Thickness(0) };
     private readonly List<ListBoxItem> _choices = [];
@@ -23,6 +23,7 @@ internal sealed class PanePicker : Window, IKeyboardPicker
         var panel = new DockPanel { Margin = new Thickness(22) };
         var header = new StackPanel(); header.Children.Add(UIHelpers.Text(title, 24, bold: true));
         header.Children.Add(UIHelpers.Text(candidatesOnly ? "Several application windows matched. Choose the window to use." : "Choose an open window or launch an application. Escape leaves the layout unchanged.", 13, UIHelpers.Muted));
+        if (!candidatesOnly) header.Children.Add(UIHelpers.Text("The new app splits only the focused pane.", 13, UIHelpers.Muted));
         DockPanel.SetDock(header, Dock.Top); panel.Children.Add(header);
         var hint = UIHelpers.Text("↑/K  ↓/J     Enter  Choose     1–9  Quick selection     Esc  Cancel", 12, UIHelpers.Muted);
         hint.Margin = new Thickness(0, 16, 0, 0); DockPanel.SetDock(hint, Dock.Bottom); panel.Children.Add(hint);
@@ -88,7 +89,7 @@ internal sealed class PanePicker : Window, IKeyboardPicker
     }
 }
 
-internal sealed class LaunchProgressWindow : Window, IKeyboardPicker
+internal sealed class LaunchProgressWindow : ThemedWindow, IKeyboardPicker
 {
     public LaunchProgressWindow(string name, bool restoring = false)
     {

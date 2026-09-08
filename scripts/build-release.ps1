@@ -1,6 +1,6 @@
 param(
     [ValidateSet('Debug','Release')][string]$Configuration = 'Release',
-    [string]$DisplayVersion = '0.1.0-alpha.1',
+    [string]$DisplayVersion = '0.1.0',
     [string]$FileVersion = '0.1.0.0',
     [switch]$SkipPublish,
     [switch]$RequireInstaller
@@ -23,7 +23,20 @@ try {
         New-Item -ItemType Directory -Path $target | Out-Null
     }
 
-    Copy-Item -Path (Join-Path $published '*') -Destination $portable -Recurse
+    # Refresh after signing, and package only declared application files. Never ship local Data.
+    & "$PSScriptRoot\refresh-package-manifest.ps1" -Package $published
+    $manifest=Get-Content -LiteralPath (Join-Path $published 'build.json') -Raw|ConvertFrom-Json
+    foreach($name in @($manifest.Files.PSObject.Properties.Name)+@('build.json')) {
+        $destination=Join-Path $portable $name
+        New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force|Out-Null
+        Copy-Item -LiteralPath (Join-Path $published $name) -Destination $destination
+    }
+    $installerFiles=foreach($name in @($manifest.Files.PSObject.Properties.Name)+@('build.json')) {
+        $subdir=Split-Path -Parent $name
+        'Source: "'+(Join-Path $published $name)+'"; DestDir: "{app}'+$(if($subdir){'\'+$subdir}else{''})+'"; Flags: ignoreversion'
+    }
+    $installerFiles|Set-Content -LiteralPath (Join-Path $release 'installer-files.iss') -Encoding utf8
+    Compress-Archive -Path (Join-Path $portable '*') -DestinationPath (Join-Path $release 'DeskMux-update-x64.zip') -CompressionLevel Optimal
     New-Item -ItemType File -Path (Join-Path $portable 'portable.mode') -Force | Out-Null
     @'
 DeskMux portable edition
@@ -48,6 +61,7 @@ Keep portable.mode beside DeskMux.exe. DeskMux will store sessions, settings, an
         Write-Warning 'Inno Setup 6 is not installed. The portable ZIP was built; the installer will be built by the release workflow.'
     }
 
+    Remove-Item -LiteralPath (Join-Path $release 'installer-files.iss')
     & "$PSScriptRoot\write-checksums.ps1"
     Write-Host "Release assets: $release"
 } finally { Pop-Location }

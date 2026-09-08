@@ -4,7 +4,7 @@ using System.Windows.Data;
 
 namespace DeskMux.App.UI;
 
-internal sealed class ConfirmMoveDialog : Window
+internal sealed class ConfirmMoveDialog : ThemedWindow
 {
     public ConfirmMoveDialog(string window, string source, string target)
     {
@@ -20,7 +20,7 @@ internal sealed class ConfirmMoveDialog : Window
     }
 }
 
-internal sealed class LaunchProfileDialog : Window
+internal sealed class LaunchProfileDialog : ThemedWindow
 {
     public AppLaunchProfile Profile { get; private set; }
     public LaunchProfileDialog(AppLaunchProfile draft)
@@ -67,7 +67,7 @@ internal sealed class LaunchProfileDialog : Window
     }
 }
 
-internal sealed class NameDialog : Window
+internal sealed class NameDialog : ThemedWindow
 {
     private readonly TextBox _input;
     public string Value => _input.Text.Trim();
@@ -83,7 +83,7 @@ internal sealed class NameDialog : Window
     }
 }
 
-internal sealed class DeleteDialog : Window
+internal sealed class DeleteDialog : ThemedWindow
 {
     private readonly RadioButton _move;
     public bool MoveToCurrent => _move.IsChecked == true;
@@ -109,7 +109,7 @@ internal sealed class CaptureChoice(WindowSnapshot snapshot, string? session) : 
     public event PropertyChangedEventHandler? PropertyChanged;
 }
 
-internal sealed class CaptureDialog : Window
+internal sealed class CaptureDialog : ThemedWindow
 {
     public CaptureDialog(List<CaptureChoice> choices)
     {

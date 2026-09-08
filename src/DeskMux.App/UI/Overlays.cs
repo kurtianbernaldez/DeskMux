@@ -2,7 +2,7 @@ using System.Windows.Input;
 
 namespace DeskMux.App.UI;
 
-internal sealed class PrefixOverlay : Window
+internal sealed class PrefixOverlay : ThemedWindow
 {
     public PrefixOverlay(AppController controller)
     {
@@ -19,8 +19,35 @@ internal sealed class PrefixOverlay : Window
             text.Margin = new Thickness(0, 0, 0, 5); sessions.Children.Add(text);
         }
         panel.Children.Add(sessions);
-        panel.Children.Add(UIHelpers.Text("\\ / |  Split right     − / \"  Split below     Arrows  Focus     Ctrl+Arrows  Resize", 12, UIHelpers.Muted));
-        panel.Children.Add(UIHelpers.Text("{ / }  Swap     Z  Zoom     X  Remove     J/K  Sessions     W  Picker     S  Manager", 12, UIHelpers.Muted));
+        var settings = controller.Sessions.State.Settings;
+        var shortcuts = new Grid { Margin = new Thickness(0, 14, 0, 0) };
+        shortcuts.ColumnDefinitions.Add(new ColumnDefinition());
+        shortcuts.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
+        shortcuts.ColumnDefinitions.Add(new ColumnDefinition());
+        var commands = new[] {
+            ("SplitRight", "Split right"), ("SplitBelow", "Split below"),
+            ("Release", "Float pane"), ("Zoom", "Zoom / restore"),
+            ("Undo", "Undo layout"), ("Picker", "Switch session"),
+            ("Manager", "Open manager"), ("Cancel", "Cancel")
+        };
+        for (var i = 0; i < commands.Length; i++)
+        {
+            if (i % 2 == 0) shortcuts.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var (id, label) = commands[i];
+            var row = new Grid { Margin = new Thickness(0, 4, 0, 4) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(115) });
+            row.ColumnDefinitions.Add(new ColumnDefinition());
+            var key = UIHelpers.Text(HotkeySettingsUi.Shortcut(settings, id), 13, UIHelpers.Brush("Accent"), true);
+            key.Margin = new Thickness(8, 5, 8, 5);
+            var badge = new Border { Background = UIHelpers.Brush("Surface"), CornerRadius = new CornerRadius(4),
+                BorderBrush = UIHelpers.Brush("Border"), BorderThickness = new Thickness(1),
+                HorizontalAlignment = HorizontalAlignment.Left, MaxWidth = 107, Child = key };
+            var description = UIHelpers.Text(label, 14);
+            description.Margin = new Thickness(0); description.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(description, 1); row.Children.Add(badge); row.Children.Add(description);
+            Grid.SetRow(row, i / 2); Grid.SetColumn(row, i % 2 * 2); shortcuts.Children.Add(row);
+        }
+        panel.Children.Add(shortcuts);
         Content = new Border { BorderThickness = new Thickness(1), BorderBrush = UIHelpers.Brush("Border"), Child = panel };
     }
 
@@ -40,7 +67,7 @@ internal interface IKeyboardPicker
     bool HandleKey(int key);
 }
 
-internal sealed class SessionPicker : Window, IKeyboardPicker
+internal sealed class SessionPicker : ThemedWindow, IKeyboardPicker
 {
     private readonly ListBox _list;
     public Guid? SelectedSessionId { get; private set; }

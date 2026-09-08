@@ -4,11 +4,12 @@ using System.Windows.Controls.Primitives;
 
 namespace DeskMux.App.UI;
 
-internal sealed class ManagerWindow : Window
+internal sealed class ManagerWindow : ThemedWindow
 {
     private readonly AppController _controller;
     private readonly ContentControl _content = new();
     private readonly TextBlock _status;
+    private readonly TextBlock _prefixHint;
     private readonly Dictionary<string, Button> _navigation = [];
     private ListBox? _sessionList;
     private ContentControl? _detail;
@@ -19,11 +20,11 @@ internal sealed class ManagerWindow : Window
 
     public ManagerWindow(AppController controller)
     {
-        _controller = controller; Title = "DeskMux — Session manager"; Width = 1080; Height = 720; MinWidth = 880; MinHeight = 580; WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        var root = new Grid(); root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(190) }); root.ColumnDefinitions.Add(new ColumnDefinition());
+        _controller = controller; Title = "DeskMux — " + AppInfo.BuildLabel; Width = 1080; Height = 720; MinWidth = 880; MinHeight = 580; WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        var root = new Grid { Background = UIHelpers.Brush("Background") }; root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(190) }); root.ColumnDefinitions.Add(new ColumnDefinition());
         var sidebar = new DockPanel { Background = UIHelpers.Brush("Sidebar"), LastChildFill = true };
         var bottom = new StackPanel { Margin = new Thickness(18) }; bottom.Children.Add(UIHelpers.Text("Always within reach", 12, UIHelpers.Brush("SidebarMuted")));
-        var prefix = UIHelpers.Text(controller.PrefixLabel + "  →  W", 19, UIHelpers.Brush("SidebarText"), true); bottom.Children.Add(prefix);
+        var prefix = _prefixHint = UIHelpers.Text(controller.PrefixLabel + "  →  " + HotkeySettingsUi.Shortcut(controller.Sessions.State.Settings,"Picker"), 19, UIHelpers.Brush("SidebarText"), true); bottom.Children.Add(prefix);
         var exit = UIHelpers.Button("Exit DeskMux", controller.Exit); exit.Background = Brushes.Transparent; exit.Foreground = UIHelpers.Brush("SidebarText"); bottom.Children.Add(exit); DockPanel.SetDock(bottom, Dock.Bottom); sidebar.Children.Add(bottom);
         var nav = new StackPanel { Margin = new Thickness(18, 28, 10, 0) }; nav.Children.Add(UIHelpers.Text("▦  DeskMux", 24, UIHelpers.Brush("SidebarText"), true));
         var tag = UIHelpers.Text("YOUR APPS. YOUR CONTEXT.", 9, UIHelpers.Brush("SidebarMuted")); tag.Margin = new Thickness(0, 0, 0, 35); nav.Children.Add(tag);
@@ -69,6 +70,7 @@ internal sealed class ManagerWindow : Window
     public void SelectSession(Guid id) { _selection = id; if (_page == "Sessions") Refresh(); }
     public void RefreshStatus()
     {
+        _prefixHint.Text = _controller.PrefixLabel + "  →  " + HotkeySettingsUi.Shortcut(_controller.Sessions.State.Settings,"Picker");
         var sessions = _controller.Sessions;
         _status.Text = sessions.LastError ?? (sessions.HidingPaused ? "●  Session hiding paused — all managed windows are accessible." : "●  " + (sessions.ActiveSession?.Name ?? "Detached") + "   ·   " + _controller.PrefixLabel + " for commands   ·   Closing this window keeps DeskMux in the tray.");
     }
@@ -88,6 +90,7 @@ internal sealed class ManagerWindow : Window
         if (session == null) { _detail.Content = UIHelpers.Text("Create your first session, then add the application windows you want to keep together.", color: UIHelpers.Muted); return; }
         var panel = new DockPanel(); var top = new StackPanel(); top.Children.Add(UIHelpers.Text(session.Name, 25, bold: true));
         var controls = new WrapPanel(); controls.Children.Add(UIHelpers.Button("Switch here", () => _controller.Switch(session.Id), true)); controls.Children.Add(UIHelpers.Button("Restore apps", () => _controller.RestoreSession(session.Id))); controls.Children.Add(UIHelpers.Button("Rename", () => _controller.Rename(session.Id))); controls.Children.Add(UIHelpers.Button("↑", () => _controller.Sessions.ReorderSession(session.Id, -1))); controls.Children.Add(UIHelpers.Button("↓", () => _controller.Sessions.ReorderSession(session.Id, 1))); controls.Children.Add(UIHelpers.Button("Delete", () => _controller.Delete(session.Id))); top.Children.Add(controls);
+        top.Children.Add(new Expander{Header="Saved layouts",Content=LayoutPresetsUi.Build(_controller,session.Id)});
         top.Children.Add(UIHelpers.Text("WINDOWS", 11, UIHelpers.Muted, true)); DockPanel.SetDock(top, Dock.Top); panel.Children.Add(top);
         var bottom = new StackPanel { Margin = new Thickness(0, 12, 0, 0) }; var actions = new WrapPanel(); actions.Children.Add(UIHelpers.Button("+  Add windows", () => _controller.CaptureWindows(session.Id)));
         var move = UIHelpers.Button("Move to…", () => { if (_windowList?.SelectedItem is ManagedWindow window) _controller.PickSession(true, window.Handle, window.Id); });
@@ -102,8 +105,8 @@ internal sealed class ManagerWindow : Window
         var splitBelow = UIHelpers.Button("Split below", () => _controller.OpenPane(PaneOrientation.Horizontal, (_windowList?.SelectedItem as ManagedWindow)?.Handle ?? 0));
         var reapply = UIHelpers.Button("Reapply layout", () => { _controller.Sessions.ReapplyPaneLayouts(); _controller.ReportError(); });
         splitRight.IsEnabled = splitBelow.IsEnabled = reapply.IsEnabled = session.Id == _controller.Sessions.State.ActiveSessionId;
-        paneActions.Children.Add(splitRight); paneActions.Children.Add(splitBelow); paneActions.Children.Add(reapply); paneActions.Children.Add(UIHelpers.Button("Edit launchers", () => Navigate("Launchers"))); bottom.Children.Add(paneActions);
-        bottom.Children.Add(UIHelpers.Text("Dragging or resizing a pane releases it to floating while keeping session membership. Remove leaves the application running and unmanaged; a lone surviving pane also becomes floating.", 12, UIHelpers.Muted)); DockPanel.SetDock(bottom, Dock.Bottom); panel.Children.Add(bottom);
+        paneActions.Children.Add(splitRight); paneActions.Children.Add(splitBelow); paneActions.Children.Add(reapply); paneActions.Children.Add(UIHelpers.Button("Undo layout",()=>{_controller.Sessions.UndoPaneLayout();_controller.ReportError();})); paneActions.Children.Add(UIHelpers.Button("Edit launchers", () => Navigate("Launchers"))); bottom.Children.Add(paneActions);
+        bottom.Children.Add(UIHelpers.Text("Split right or below divides only the focused pane. Resize an app edge to adjust its shared divider on release. Panes stay snapped together. Drag a title bar onto another pane to swap; hold Alt when starting a drag to float. Release to floating also enables free placement. Undo restores the previous layout.", 12, UIHelpers.Muted)); DockPanel.SetDock(bottom, Dock.Bottom); panel.Children.Add(bottom);
         _windowList = new ListBox { ItemsSource = session.Windows };
         var row = new FrameworkElementFactory(typeof(StackPanel)); var title = new FrameworkElementFactory(typeof(TextBlock)); title.SetBinding(TextBlock.TextProperty, new Binding(nameof(ManagedWindow.DisplayTitle))); title.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis); title.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold); row.AppendChild(title);
         var subtitle = new FrameworkElementFactory(typeof(TextBlock)); subtitle.SetBinding(TextBlock.TextProperty, new Binding { Converter = new WindowStatusConverter(_controller.Sessions) }); subtitle.SetValue(TextBlock.FontSizeProperty, 12.0); subtitle.SetValue(TextBlock.ForegroundProperty, UIHelpers.Muted); subtitle.SetValue(TextBlock.MarginProperty, new Thickness(0, 5, 0, 0)); subtitle.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap); row.AppendChild(subtitle); _windowList.ItemTemplate = new DataTemplate { VisualTree = row };
@@ -114,14 +117,16 @@ internal sealed class ManagerWindow : Window
             focus.IsEnabled = window != null && !window.IsMissing;
             release.IsEnabled = window != null && session.PaneCanvases.Any(c => PaneTree.FindLeaf(c, window.Id) != null);
         };
-        if (session.Windows.Count == 0) panel.Children.Add(new Border { Background = UIHelpers.Brush("Surface"), Padding = new Thickness(24), Child = UIHelpers.Text("A place for your next context.\n\nAdd open windows, or focus an application and press " + _controller.PrefixLabel + " followed by A.", color: UIHelpers.Muted) }); else panel.Children.Add(_windowList);
+        if (session.Windows.Count == 0) panel.Children.Add(new Border { Background = UIHelpers.Brush("Surface"), Padding = new Thickness(24), Child = UIHelpers.Text("A place for your next context.\n\nAdd open windows, or focus an application and press " + _controller.PrefixLabel + " followed by " + HotkeySettingsUi.Shortcut(_controller.Sessions.State.Settings,"Add") + ".", color: UIHelpers.Muted) }); else panel.Children.Add(_windowList);
         _detail.Content = panel;
     }
     private void ShowDetails(ManagedWindow window)
     {
         var f = window.Fingerprint; var l = window.Layout;
         var text = $"{window.DisplayTitle}\n\nPane: {_controller.Sessions.PaneStatus(window.Id)}\n\nProcess: {f.ProcessName} ({f.ProcessId})\nPath: {f.ExecutablePath}\nWindow class: {f.WindowClass}\nHWND: 0x{window.Handle:X}\nMonitor: {l.MonitorDevice}\nPosition: {l.Bounds.X}, {l.Bounds.Y}\nSize: {l.Bounds.Width} × {l.Bounds.Height}\nState: {l.ShowState}\nLast focused: {window.LastFocusedUtc.ToLocalTime():g}\nStatus: {(window.IsMissing ? "Missing" : window.HiddenByDeskMux ? "Hidden by DeskMux" : "Available")}\n{window.Status}";
-        var details = new Window { Title = "Window details", Width = 620, Height = 450, Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = new TextBox { Text = text, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(20) } }; details.ShowDialog();
+        var details = new Window { Title = "Window details", Width = 620, Height = 450, Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = UIHelpers.Brush("Background"), Foreground = UIHelpers.Brush("Ink"),
+            Content = new TextBox { Text = text, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(20) } }; details.ShowDialog();
     }
     private UIElement BuildLaunchers()
     {
@@ -166,34 +171,11 @@ internal sealed class ManagerWindow : Window
         list.MouseDoubleClick += (_, _) => { if (Selected() is { } profile) _controller.EditLauncher(profile); };
         actions.Children.Add(edit); actions.Children.Add(up); actions.Children.Add(down); actions.Children.Add(remove);
         DockPanel.SetDock(actions, Dock.Bottom); panel.Children.Add(actions);
-        if (profiles.Count == 0) panel.Children.Add(new Border { Background = UIHelpers.Brush("Surface"), Padding = new Thickness(24), Child = UIHelpers.Text("No launchers yet. Add an executable, then open a pane with " + _controller.PrefixLabel + " followed by | or −.", color: UIHelpers.Muted) });
+        if (profiles.Count == 0) panel.Children.Add(new Border { Background = UIHelpers.Brush("Surface"), Padding = new Thickness(24), Child = UIHelpers.Text("No launchers yet. Add an executable, then open a pane with " + _controller.PrefixLabel + " followed by " + HotkeySettingsUi.Shortcut(_controller.Sessions.State.Settings,"SplitRight") + " or " + HotkeySettingsUi.Shortcut(_controller.Sessions.State.Settings,"SplitBelow") + ".", color: UIHelpers.Muted) });
         else panel.Children.Add(list);
         return panel;
     }
-    private UIElement BuildHotkeys()
-    {
-        var panel = new StackPanel(); panel.Children.Add(UIHelpers.Text("Hotkeys", 30, bold: true)); panel.Children.Add(UIHelpers.Text("One prefix. A single key. Your next workspace.", color: UIHelpers.Muted));
-        panel.Children.Add(UIHelpers.Text("PREFIX", 11, UIHelpers.Muted, true)); var row = new WrapPanel();
-        var mods = new ComboBox { Width = 180, ItemsSource = new[] { "Ctrl", "Alt", "Ctrl+Alt", "Ctrl+Shift", "Alt+Shift", "Ctrl+Alt+Shift" } };
-        var modValues = new[] { PrefixModifiers.Control, PrefixModifiers.Alt, PrefixModifiers.Control | PrefixModifiers.Alt, PrefixModifiers.Control | PrefixModifiers.Shift, PrefixModifiers.Alt | PrefixModifiers.Shift, PrefixModifiers.Control | PrefixModifiers.Alt | PrefixModifiers.Shift };
-        mods.SelectedIndex = Math.Max(0, Array.IndexOf(modValues, _controller.Sessions.State.Settings.PrefixModifiers));
-        var keys = Enumerable.Range('A', 26).Append(0x20).Concat(Enumerable.Range(0x70, 12)).ToArray();
-        var key = new ComboBox { Width = 100, Margin = new Thickness(10, 4, 12, 12), ItemsSource = keys.Select(k => KeyInterop.KeyFromVirtualKey(k).ToString()).ToList(), SelectedIndex = Math.Max(0, Array.IndexOf(keys, _controller.Sessions.State.Settings.PrefixVirtualKey)) };
-        row.Children.Add(mods); row.Children.Add(key);
-        row.Children.Add(UIHelpers.Button("Save prefix", () => { _controller.Sessions.State.Settings.PrefixModifiers = modValues[mods.SelectedIndex]; _controller.Sessions.State.Settings.PrefixVirtualKey = keys[key.SelectedIndex]; _controller.SettingsChanged(); _controller.Notify("Prefix updated", "Press " + _controller.PrefixLabel + " followed by a command."); }, true)); panel.Children.Add(row);
-        panel.Children.Add(UIHelpers.Text("DeskMux consumes the prefix globally while shortcuts are enabled, so the foreground app does not receive that shortcut. Pause shortcuts from the tray whenever you need the app’s original binding.", 13, UIHelpers.Muted));
-        var paused = new CheckBox { Content = "Pause keyboard shortcuts", IsChecked = _controller.Sessions.State.Settings.KeyboardPaused }; paused.Click += (_, _) => { _controller.Sessions.State.Settings.KeyboardPaused = paused.IsChecked == true; _controller.SettingsChanged(); }; panel.Children.Add(paused);
-        panel.Children.Add(UIHelpers.Text("COMMAND MODE TIMEOUT", 11, UIHelpers.Muted, true));
-        var timeouts = new[] { 1500, 1800, 2000, 5000, 10000 };
-        var timeoutIndex = Array.IndexOf(timeouts, _controller.Sessions.State.Settings.CommandTimeoutMs);
-        var timeout = new ComboBox { Width = 180, HorizontalAlignment = HorizontalAlignment.Left, ItemsSource = new[] { "1.5 seconds", "1.8 seconds", "2 seconds", "5 seconds", "10 seconds" }, SelectedIndex = timeoutIndex < 0 ? 1 : timeoutIndex };
-        timeout.SelectionChanged += (_, _) => { _controller.Sessions.State.Settings.CommandTimeoutMs = timeouts[timeout.SelectedIndex]; _controller.SettingsChanged(); }; panel.Children.Add(timeout);
-        panel.Children.Add(UIHelpers.Text("AFTER THE PREFIX", 11, UIHelpers.Muted, true));
-        var grid = new Grid(); grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) }); grid.ColumnDefinitions.Add(new ColumnDefinition());
-        var commands = new[] { ("1–9", "Switch to session 1–9"), ("J / K", "Next / previous session"), ("W", "Open session switcher"), ("C / R", "Create / rename session"), ("A", "Add focused window; tile when panes already fill its monitor"), ("\\ / |", "Open pane picker; split left / right"), ("− / \"", "Open pane picker; split top / bottom"), ("Arrows", "Focus neighboring pane"), ("Ctrl+Arrows", "Resize pane by about 5%"), ("{ / }", "Swap with previous / next pane"), ("Z", "Zoom / restore pane"), ("X", "Remove window without closing it"), ("M", "Move window to a session as floating"), ("D / L", "Detach / previous active session"), ("S / Escape", "Open manager / cancel command mode") };
-        foreach (var (shortcut, description) in commands) { var i = grid.RowDefinitions.Count; grid.RowDefinitions.Add(new RowDefinition()); var a = UIHelpers.Text(shortcut, 14, bold: true); var b = UIHelpers.Text(description, 14, UIHelpers.Muted); Grid.SetRow(a, i); Grid.SetRow(b, i); Grid.SetColumn(b, 1); grid.Children.Add(a); grid.Children.Add(b); } panel.Children.Add(grid);
-        panel.Children.Add(UIHelpers.Text("Emergency: Ctrl+Alt+Shift+F12 always shows all managed windows, including while shortcuts are paused.", 13, bold: true)); return new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-    }
+    private UIElement BuildHotkeys() => HotkeySettingsUi.Build(_controller);
     private UIElement BuildAppearance()
     {
         var panel = new StackPanel();
@@ -215,7 +197,7 @@ internal sealed class ManagerWindow : Window
             {
                 Brush color;
                 try { color = new SolidColorBrush((Color)ColorConverter.ConvertFromString(item.Item2)!); } catch { color = UIHelpers.Brush("Danger"); }
-                var label = UIHelpers.Text(item.Item1 + "\n" + item.Item2, 11, UIHelpers.Brush("Ink"), true); label.Margin = new Thickness(8);
+                var label = UIHelpers.Text(item.Item1 + "\n" + item.Item2, 11, ThemeManager.ContrastBrush(item.Item2), true); label.Margin = new Thickness(8);
                 preview.Children.Add(new Border { Background = color, BorderBrush = UIHelpers.Brush("Border"), BorderThickness = new Thickness(1), Margin = new Thickness(0,0,8,8), MinHeight = 62, Child = label });
             }
         }
@@ -259,11 +241,15 @@ internal sealed class ManagerWindow : Window
             fields["Text"].Text=palette.Text; fields["Muted"].Text=palette.Muted; fields["Accent"].Text=palette.Accent; fields["Border"].Text=palette.Border; fields["Error"].Text=palette.Danger;
         }));
         panel.Children.Add(actions);
+        panel.Children.Add(GuideSettingsUi.Appearance(_controller));
         return new ScrollViewer { Content=panel, VerticalScrollBarVisibility=ScrollBarVisibility.Auto };
     }
     private UIElement BuildBehavior()
     {
         var panel = new StackPanel(); panel.Children.Add(UIHelpers.Text("Behavior", 30, bold: true)); panel.Children.Add(UIHelpers.Text("DeskMux manages windows conservatively and keeps your applications running.", color: UIHelpers.Muted));
+        panel.Children.Add(GuideSettingsUi.Behavior(_controller));
+        var reconnect=new CheckBox{Content="Restore pane layouts when monitors reconnect",IsChecked=_controller.Sessions.State.Settings.RestoreMonitorLayouts};
+        reconnect.Click+=(_,_)=>{_controller.Sessions.State.Settings.RestoreMonitorLayouts=reconnect.IsChecked==true;_controller.SettingsChanged();};panel.Children.Add(reconnect);
         var startup = new CheckBox { Content = "Open session manager when DeskMux starts", IsChecked = _controller.Sessions.State.Settings.ShowManagerOnStartup }; startup.Click += (_, _) => { _controller.Sessions.State.Settings.ShowManagerOnStartup = startup.IsChecked == true; _controller.SettingsChanged(); }; panel.Children.Add(startup);
         var restoreMinimized = new CheckBox { Content = "Restore minimized windows when switching sessions", IsChecked = _controller.Sessions.State.Settings.RestoreMinimizedOnSessionSwitch };
         restoreMinimized.Click += (_, _) => { _controller.Sessions.State.Settings.RestoreMinimizedOnSessionSwitch = restoreMinimized.IsChecked == true; _controller.SettingsChanged(); };
@@ -288,12 +274,14 @@ internal sealed class ManagerWindow : Window
     }
     private UIElement BuildAbout()
     {
-        var panel = new StackPanel(); panel.Children.Add(UIHelpers.Text("DeskMux", 38, bold: true)); panel.Children.Add(UIHelpers.Text("Sessions and panes for Windows applications.", 20)); panel.Children.Add(UIHelpers.Text("Version " + AppInfo.Version + "  ·  Windows x64  ·  .NET 10 / WPF", 13, UIHelpers.Muted));
+        var panel = new StackPanel(); panel.Children.Add(UIHelpers.Text("DeskMux", 38, bold: true)); panel.Children.Add(UIHelpers.Text("Sessions and panes for Windows applications.", 20)); panel.Children.Add(UIHelpers.Text("Version " + AppInfo.BuildLabel + "  ·  Windows x64  ·  .NET 10 / WPF", 13, UIHelpers.Muted));
         panel.Children.Add(UIHelpers.Text("Group native application windows into sessions. Arrange them into nested panes, or leave them floating. Split, navigate, resize, swap, and zoom with a keyboard prefix. Applications keep running.", 16, UIHelpers.Muted));
-        panel.Children.Add(UIHelpers.Text("GET STARTED", 11, UIHelpers.Muted, true)); panel.Children.Add(UIHelpers.Text("1. Create a session for a context such as DEV or IMAGES.\n2. Use Add windows to choose its open applications.\n3. Press " + _controller.PrefixLabel + ", then a session number.\n4. Press " + _controller.PrefixLabel + ", then W to browse sessions.", 16));
+        panel.Children.Add(UIHelpers.Text("GET STARTED", 11, UIHelpers.Muted, true)); panel.Children.Add(UIHelpers.Text("1. Create a session for a context such as DEV or IMAGES.\n2. Use Add windows to choose its open applications.\n3. Press " + _controller.PrefixLabel + ", then a session number.\n4. Press " + _controller.PrefixLabel + ", then " + HotkeySettingsUi.Shortcut(_controller.Sessions.State.Settings,"Picker") + " to browse sessions.", 16));
         panel.Children.Add(UIHelpers.Text("Your sessions and logs are stored locally. DeskMux has no account, cloud service, application embedding, or virtual desktop dependency.", 14, UIHelpers.Muted));
         panel.Children.Add(UIHelpers.Text("Closing this manager leaves DeskMux in your tray. Use Exit DeskMux to restore all managed windows and quit.", 14, bold: true));
         var actions = new WrapPanel();
+        actions.Children.Add(UIHelpers.Button("Install downloaded update", () => UpdateInstaller.Choose(_controller)));
+        panel.Children.Add(UIHelpers.Text("Running from " + AppContext.BaseDirectory + "\nData: " + _controller.DataDirectory,12,UIHelpers.Muted));
         actions.Children.Add(UIHelpers.Button("Check for updates", () => _ = _controller.CheckForUpdatesAsync(), true));
         actions.Children.Add(UIHelpers.Button("Website", () => _controller.OpenUrl(AppInfo.WebsiteUrl)));
         actions.Children.Add(UIHelpers.Button("GitHub", () => _controller.OpenUrl(AppInfo.RepositoryUrl)));
@@ -305,7 +293,7 @@ internal sealed class ManagerWindow : Window
         public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
         {
             if (value is not ManagedWindow window) return "";
-            return window.Fingerprint.ProcessName + "  ·  " + (window.IsMissing ? "Missing" : window.HiddenByDeskMux ? "Hidden" : window.Layout.ShowState.ToString()) + "  ·  " + sessions.PaneStatus(window.Id) + (window.Status.Length > 0 ? "  ·  " + window.Status : "");
+            return (sessions.IsFocused(window) ? "● Focused  ·  " : "") + window.Fingerprint.ProcessName + "  ·  " + (window.IsMissing ? "Missing" : window.HiddenByDeskMux ? "Hidden" : window.Layout.ShowState.ToString()) + "  ·  " + (sessions.PaneStatus(window.Id) == "Floating" ? "Floating · free to move" : sessions.PaneStatus(window.Id)) + (window.Status.Length > 0 ? "  ·  " + window.Status : "");
         }
         public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => throw new NotSupportedException();
     }

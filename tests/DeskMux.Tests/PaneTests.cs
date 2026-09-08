@@ -6,6 +6,27 @@ static class PaneTests
     {
         var tests = new (string Name, Action Run)[]
         {
+            ("Minimum sizes widen ancestors for repeated same-axis splits", () => {
+                var (c,a,b)=Pair(); var d=Guid.NewGuid();
+                c.MinimumSizes[b]=new(650,300); c.MinimumSizes[d]=new(650,300);
+                PaneTree.Split(c,b,d,PaneOrientation.Vertical);
+                var layout=PaneTree.Calculate(c);
+                Check.Equal(620,layout[a].Bounds.Width); Check.Equal(650,layout[b].Bounds.Width); Check.Equal(650,layout[d].Bounds.Width); ExactCoverage(c);
+            }),
+            ("Full monitor splits retain all four windows and exact coverage", () => {
+                var (c,a,b)=Pair(); var d=Guid.NewGuid(); var e=Guid.NewGuid();
+                PaneTree.Split(c,b,d,PaneOrientation.Horizontal,true);
+                Check.Equal(new PixelRect(0,520,1920,520),PaneTree.Calculate(c)[d].Bounds);
+                PaneTree.Split(c,d,e,PaneOrientation.Vertical,true);
+                Check.Equal(new PixelRect(960,0,960,1040),PaneTree.Calculate(c)[e].Bounds);
+                Check.Sequence(new[]{a,b,d,e},PaneTree.Leaves(c).Select(n=>n.WindowId!.Value)); ExactCoverage(c);
+            }),
+            ("Mouse corner resizing adjusts both shared dividers", () => {
+                var (c,a,b)=Pair(); var d=Guid.NewGuid(); PaneTree.Split(c,b,d,PaneOrientation.Horizontal);
+                Check.True(PaneTree.ResizeToBounds(c,d,new(800,600,1120,440)));
+                var layout=PaneTree.Calculate(c); Check.Equal(800,layout[a].Bounds.Width);
+                Check.Equal(600,layout[b].Bounds.Height); Check.Equal(new PixelRect(800,600,1120,440),layout[d].Bounds); ExactCoverage(c);
+            }),
             ("Root pane occupies the complete work area", () => {
                 var canvas = Canvas(); var id = Guid.NewGuid(); PaneTree.Split(canvas, null, id, PaneOrientation.Vertical);
                 Check.Equal(1, canvas.Nodes.Count); Check.Equal(canvas.MonitorWorkArea, PaneTree.Calculate(canvas)[id].Bounds);

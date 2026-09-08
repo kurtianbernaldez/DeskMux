@@ -66,6 +66,7 @@ internal static class ThemeManager
     }
 
     internal static ThemePalette Clone(ThemePalette p) => Palette(p.Background,p.Surface,p.Sidebar,p.Text,p.Muted,p.Accent,p.Border,p.Danger);
+    internal static Brush ContrastBrush(string background) => new SolidColorBrush(Contrast(Parse(background)));
     private static ThemePalette SystemPalette()
     {
         if (SystemParameters.HighContrast)

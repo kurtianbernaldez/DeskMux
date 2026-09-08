@@ -57,7 +57,7 @@ dotnet publish src/DeskMux.App -c Release -r win-x64 --self-contained true -o ar
 
 1. Launch DeskMux. The session manager opens, and a tray icon stays available.
 2. Keep the initial DEV session or rename it. Focus an application window and press **Ctrl+B**, release, then **A** to add that window.
-3. Press **Ctrl+B**, release, then **\\** or **|** to open a pane to the right. Choose a running window with arrows and Enter. Use **-** or **\"** for a pane below. Repeat on any focused pane for nested splits.
+3. Press **Ctrl+B**, release, then **\\** or **|** to open a pane to the right. Choose a running window with arrows and Enter. Use **-** or **\"** for a pane below. Each split halves only the focused pane: splitting the right half again creates widths of one half, one quarter, and one quarter. Splitting below the third pane divides only that third column.
 4. Add application executables on **Manager → Launchers**. They appear in the picker's **Launch new** section. DeskMux waits for an eligible window before changing the layout.
 5. Create another session with **Ctrl+B → C**, add its applications, and press **Ctrl+B → 1** or **2** to switch. Unmanaged windows remain visible; only windows you assigned to sessions are controlled.
 
@@ -104,9 +104,9 @@ If the focused window is a pane, it becomes the first half of the split. A float
 
 Adding a focused window with **A** automatically splits an existing pane canvas on that monitor so the new app is visible and the current panes make room. On a monitor without panes, it is added as a floating member.
 
-Starting an interactive mouse move or resize releases that pane to floating mode, keeps it in the session, and lets the chosen placement persist. **Release to floating** in the manager does the same directly. **X / Remove from session** leaves the application visible and unmanaged. Other panes reflow while at least two remain; a lone survivor is released at its current rectangle so it stays movable. These operations never send an application a close command or terminate it.
+Panes align their visible edges, accounting for Windows' invisible resize borders. Dragging an app edge adjusts shared dividers when you release it, and neighboring panes reflow together. Moving a pane by its title bar snaps it back into its layout. Use **Release to floating** in the manager for free placement. **X / Remove from session** leaves the application visible and unmanaged. Other panes reflow while at least two remain; a lone survivor is released at its current rectangle so it stays movable. These operations never send an application a close command or terminate it.
 
-Navigation uses pane rectangles and overlapping spans, so it works across nested splits. Resizing finds the nearest ancestor split matching the requested axis and respects minimum sizes. Swapping follows stable depth-first pane order and keeps focus on the same application after it moves. Zoom fills only the focused pane's monitor canvas and safely hides the other panes in that canvas. Pane navigation, splitting, resizing, and swapping restore the canvas from zoom before applying their operation. Other monitor canvases remain unaffected.
+Navigation uses live pane rectangles and overlapping spans, skipping missing applications. Resizing finds the nearest ancestor split matching the requested axis and respects each application's native minimum size. Hold **Ctrl+Arrow** after the prefix to continue resizing. Splits readjust surrounding panes as needed to accommodate those minimums; a layout that cannot fit is rejected before any windows move. Swapping follows stable depth-first pane order and keeps focus on the same application after it moves. Zoom fills only the focused pane's monitor canvas and safely hides the other panes in that canvas. Pane navigation, splitting, resizing, and swapping restore the canvas from zoom before applying their operation. Other monitor canvases remain unaffected.
 
 ## Appearance and themes
 
@@ -238,3 +238,23 @@ The landing page is maintained separately in [kurtianbernaldez/deskmux-website](
 ## Roadmap
 
 The separation of session state, native window operations, persistence and UI leaves room for a CLI, title/process rules, templates, startup scripts, alternate configuration formats, and plugins. Native windows, predictable pane layouts, and safe recovery remain the foundation.
+
+### Pane guides
+
+Behavior → Pane guide visibility controls whether guides stay visible, appear during command mode and pane operations, appear briefly after changes, or stay hidden. Appearance → Pane guides provides theme-following or custom divider, focused-pane, and active-resize colors, with a live line preview, physical-pixel thickness, opacity, and fade delay. These settings are saved in `sessions.json`. Guides are click-through, stay scoped to each split container, and use independent monitor overlays; zoom displays only the focused pane outline.
+
+### Personalized shortcuts
+
+Open Hotkeys to edit the prefix and each command, including emergency recovery and cancellation. Save shortcuts applies the complete set after checking conflicts; Restore default shortcuts prepares the original bindings for saving. The default release shortcut is prefix → F: it releases the focused pane to floating while keeping its session membership. X removes the window from the session instead. Shortcuts persist in `sessions.json`. Picker navigation continues to use standard arrows, Enter and Escape.
+
+### Layout workflows and reliable updates
+
+- **Undo:** prefix → U restores the previous pane layout in the active session (up to 64 changes during this run). Release, resize, swap, zoom, and split can be undone. Apps remain running; undo does not relaunch closed windows.
+- **Drag:** move a pane by its title bar onto another pane and release to swap. A bright outline previews the target. Hold Alt when starting the drag to release to floating. Dragging outside a target keeps the existing layout. Edge resizing still adjusts dividers.
+- **Saved layouts:** expand Saved layouts in a session to save, apply, or delete a named arrangement. Select “Use selected layout when restoring apps” to apply it after Restore apps. Existing window identities are preserved; ambiguous replacement apps are skipped instead of guessed.
+- **Feedback:** session rows distinguish focused, missing, floating, and zoomed windows; floating windows are free to move. Pane guides are configurable in Behavior and Appearance.
+- **Shortcuts:** search the Hotkeys page, click a recording field and press a combination, or use the dropdowns. Import previews a profile before Save; export writes your current choices. Standard picker arrows/Enter/Escape remain conventional UI navigation.
+- **Monitors:** display changes are debounced, wake events trigger a reflow, and temporary empty monitor reports retain layouts. Displaced canvases can return on reconnect without overwriting another canvas. Disable automatic reconnect restoration in Behavior if preferred. Real mixed-DPI docking hardware still needs hands-on validation.
+- **Updates:** the title and About page identify the build and installation path. About → Install downloaded update verifies the files in a DeskMux ZIP, restarts in the same folder, and keeps the data directory. Copy failures restore previous binaries. Checksums detect corruption, not publisher identity; install ZIPs from trusted sources.
+
+`scripts/build.ps1` now refreshes **artifacts/DeskMux-win-x64** and its ZIP by default; use `-NoPackage` for a compile-only build. Packaging stages a complete build first, detects locked installed files, preserves portable Data, and keeps a rollback copy outside the package. Direct `dotnet build` remains compile-only. Close a running copy in that folder before refreshing it.

@@ -6,6 +6,104 @@ static class SessionPaneTests
     {
         var tests = new (string Name, Action Test)[]
         {
+            ("Undo restores split resize swap zoom and release",()=>{
+                var f=Split();var session=f.Manager.ActiveSession!;var original=f.Windows.Items[1].Layout.Bounds;
+                f.Manager.ResizePane(1,PaneDirection.Right);f.Manager.UndoPaneLayout();Check.Equal(original,f.Windows.Items[1].Layout.Bounds);
+                f.Manager.SwapPane(1,1);f.Manager.UndoPaneLayout();Check.Equal(original,f.Windows.Items[1].Layout.Bounds);
+                f.Manager.TogglePaneZoom(1);f.Manager.UndoPaneLayout();Check.True(f.Windows.Items[2].IsVisible);Check.Equal(original,f.Windows.Items[1].Layout.Bounds);
+                f.Manager.ReleasePane(session.Windows.First(w=>w.Handle==1).Id);f.Manager.UndoPaneLayout();Check.Equal(1,session.PaneCanvases.Count);
+                f.Manager.UndoPaneLayout();Check.Equal(0,session.PaneCanvases.Count);Check.Equal(2,session.Windows.Count);
+            }),
+            ("Failed undo retains history and current layout",()=>{
+                var f=Split();f.Manager.ResizePane(1,PaneDirection.Right);var resized=f.Windows.Items[1].Layout.Bounds;
+                f.Windows.FailLayoutCalls.Add(f.Windows.LayoutCalls+1);f.Manager.UndoPaneLayout();Check.True(f.Manager.CanUndoLayout);Check.Equal(resized,f.Windows.Items[1].Layout.Bounds);
+            }),
+            ("Drag target excludes source and drop swaps windows",()=>{
+                var f=Split();var a=f.Manager.ActiveSession!.Windows.First(w=>w.Handle==1);var b=f.Manager.ActiveSession.Windows.First(w=>w.Handle==2);
+                Check.Equal<Guid?>(null,f.Manager.PaneDropTarget(1,100,100));Check.Equal<Guid?>(b.Id,f.Manager.PaneDropTarget(1,1500,100));
+                f.Manager.BeginPaneMoveSize(1);f.Manager.DropPane(1,b.Id);Check.Equal(960,f.Windows.Items[1].Layout.Bounds.X);
+                f.Manager.UndoPaneLayout();Check.Equal(0,f.Windows.Items[1].Layout.Bounds.X);
+            }),
+            ("Saved preset restores geometry and remains independent of edits",()=>{
+                var f=Split();var session=f.Manager.ActiveSession!;f.Manager.SaveLayoutPreset(session.Id,"Coding");var preset=f.Manager.State.LayoutPresets.Single();
+                f.Manager.ResizePane(1,PaneDirection.Right);f.Manager.ApplyLayoutPreset(preset.Id);Check.Equal(960,f.Windows.Items[1].Layout.Bounds.Width);
+                f.Manager.ReleasePane(session.Windows[0].Id);f.Manager.ApplyLayoutPreset(preset.Id);Check.Equal(1,session.PaneCanvases.Count);
+            }),
+            ("Monitor reconnect restores displaced canvas without overwriting primary",()=>{
+                var f=TwoCanvases();var secondary=f.Windows.Monitors[1];f.Windows.Monitors.RemoveAt(1);f.Manager.HandleDisplayChange();
+                Check.Equal(1,f.Manager.ActiveSession!.PaneCanvases.Count);Check.Equal("B",f.Manager.ActiveSession.SuspendedPaneCanvases.Single().MonitorDevice);
+                f.Windows.Monitors.Add(secondary);f.Manager.HandleDisplayChange();Check.Equal(2,f.Manager.ActiveSession.PaneCanvases.Count);Check.Equal(-1600,f.Windows.Items[3].Layout.Bounds.X);
+            }),
+            ("Temporary missing monitor enumeration preserves pane tree",()=>{
+                var f=Split();f.Windows.Monitors.Clear();f.Manager.HandleDisplayChange();Check.Equal(1,f.Manager.ActiveSession!.PaneCanvases.Count);
+            }),
+            ("Changed scaling reflows panes in physical pixels",()=>{
+                var f=Split();var monitor=f.Windows.Monitors[0];f.Windows.Monitors[0]=monitor with {Dpi=192,WorkArea=new(0,0,2560,1400)};
+                f.Manager.HandleDisplayChange();Check.Equal(new PixelRect(0,0,1280,1400),f.Windows.Items[1].Layout.Bounds);
+                Check.Equal(192u,f.Manager.ActiveSession!.PaneCanvases.Single().Dpi);
+            }),
+            ("Repeated right splits and a bottom split stay inside the focused container", () => {
+                var f=Split(); f.Windows.Items[3]=Fixture.Snapshot(3,"Third"); f.Windows.Items[4]=Fixture.Snapshot(4,"Fourth");
+                Check.True(f.Manager.OpenPane(3,2,PaneOrientation.Vertical));
+                Check.Equal(new PixelRect(0,0,960,1040),f.Windows.Items[1].Layout.Bounds);
+                Check.Equal(new PixelRect(960,0,480,1040),f.Windows.Items[2].Layout.Bounds);
+                Check.Equal(new PixelRect(1440,0,480,1040),f.Windows.Items[3].Layout.Bounds);
+                Check.True(f.Manager.OpenPane(4,3,PaneOrientation.Horizontal));
+                Check.Equal(new PixelRect(0,0,960,1040),f.Windows.Items[1].Layout.Bounds);
+                Check.Equal(new PixelRect(960,0,480,1040),f.Windows.Items[2].Layout.Bounds);
+                Check.Equal(new PixelRect(1440,0,480,520),f.Windows.Items[3].Layout.Bounds);
+                Check.Equal(new PixelRect(1440,520,480,520),f.Windows.Items[4].Layout.Bounds);
+            }),
+            ("Full monitor split creates a bottom row under both existing apps", () => {
+                var f=Split(); f.Windows.Items[3]=Fixture.Snapshot(3,"Third");
+                Check.True(f.Manager.OpenPane(3,2,PaneOrientation.Horizontal,entireCanvas:true));
+                Check.Equal(new PixelRect(0,520,1920,520),f.Windows.Items[3].Layout.Bounds);
+                Check.Equal(new PixelRect(0,0,960,520),f.Windows.Items[1].Layout.Bounds);
+                Check.Equal(new PixelRect(960,0,960,520),f.Windows.Items[2].Layout.Bounds);
+                f.Manager.NavigatePane(3,PaneDirection.Up); Check.Equal(2L,f.Windows.LastFocused);
+            }),
+            ("App minimums make neighboring panes give space to a third app", () => {
+                var f=Split(); f.Windows.Items[3]=Fixture.Snapshot(3,"Third");
+                f.Windows.MinimumSizes[2]=new(650,650); f.Windows.MinimumSizes[3]=new(400,300);
+                Check.True(f.Manager.OpenPane(3,2,PaneOrientation.Horizontal));
+                Check.Equal(650,f.Windows.Items[2].Layout.Bounds.Height);
+                Check.Equal(390,f.Windows.Items[3].Layout.Bounds.Height);
+                Check.False(f.Manager.HidingPaused);
+                f.Manager.ResizePane(3,PaneDirection.Up);
+                Check.Equal(650,f.Windows.Items[2].Layout.Bounds.Height);
+            }),
+            ("Impossible app minimums fail before moving any native windows", () => {
+                var f=Split(); f.Windows.Items[3]=Fixture.Snapshot(3,"Third"); var calls=f.Windows.LayoutCalls;
+                f.Windows.MinimumSizes[2]=new(650,800); f.Windows.MinimumSizes[3]=new(400,600);
+                Check.False(f.Manager.OpenPane(3,2,PaneOrientation.Horizontal));
+                Check.Equal(calls,f.Windows.LayoutCalls); Check.Equal(2,f.Manager.ActiveSession!.Windows.Count);
+                Check.False(f.Manager.HidingPaused);
+            }),
+            ("Mouse resize keeps pane membership and moves shared divider", () => {
+                var f=Split(); f.Manager.BeginPaneMoveSize(2);
+                f.Windows.SetBounds(2,new(800,0,1120,1040)); f.Manager.TrackWindow(2,false);
+                f.Manager.EndPaneMoveSize(2);
+                Check.Equal(2,PaneTree.Leaves(f.Manager.ActiveSession!.PaneCanvases.Single()).Count);
+                Check.Equal(new PixelRect(0,0,800,1040),f.Windows.Items[1].Layout.Bounds);
+                Check.Equal(new PixelRect(800,0,1120,1040),f.Windows.Items[2].Layout.Bounds);
+                f.Manager.NavigatePane(2,PaneDirection.Left); Check.Equal(1L,f.Windows.LastFocused);
+            }),
+            ("Title bar move snaps back without dissolving the canvas", () => {
+                var f=Split(); var old=f.Windows.Items[2].Layout.Bounds; f.Manager.BeginPaneMoveSize(2);
+                f.Windows.SetBounds(2,old with { X=700,Y=50 }); f.Manager.EndPaneMoveSize(2);
+                Check.Equal(old,f.Windows.Items[2].Layout.Bounds); Check.Equal(1,f.Manager.ActiveSession!.PaneCanvases.Count);
+            }),
+            ("Navigation skips missing leaves using the live geometry", () => {
+                var f=Split(); f.Windows.Items[3]=Fixture.Snapshot(3,"Third"); f.Manager.OpenPane(3,2,PaneOrientation.Horizontal);
+                f.Windows.Items.Remove(2); f.Manager.TrackWindow(2,false); f.Manager.FlushPaneLayoutChanges();
+                f.Manager.NavigatePane(1,PaneDirection.Right); Check.Equal(3L,f.Windows.LastFocused);
+            }),
+            ("Invisible borders do not schedule a repeated layout", () => {
+                var f=Split(); var expected=f.Windows.Items[1].Layout.Bounds;
+                f.Windows.Items[1]=f.Windows.Items[1] with { VisibleBounds=expected };
+                f.Windows.SetBounds(1,new(-7,0,974,1047)); var calls=f.Windows.LayoutCalls;
+                f.Manager.TrackWindow(1,false); f.Manager.FlushPaneLayoutChanges(); Check.Equal(calls,f.Windows.LayoutCalls);
+            }),
             ("Open unmanaged root without capturing unrelated foreground", () => {
                 var f = Fixture.WithTwoWindows(); Check.True(f.Manager.OpenPane(2, 1, PaneOrientation.Vertical));
                 Check.Equal(1, f.Manager.ActiveSession!.Windows.Count); Check.Equal(2L, f.Manager.ActiveSession.Windows[0].Handle);

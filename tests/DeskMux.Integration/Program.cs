@@ -23,6 +23,21 @@ internal static class Program
         SetProcessDpiAwarenessContext(new IntPtr(-4));
         if (args.Length > 0 && args[0] == "--fixture") return RunFixture(args[1], args[2]);
         if (args.Length > 0 && args[0] == "--launch-fixture") return NativeLaunchChecks.RunFixture(args[1], args[2]);
+        if (args.Length > 0 && args[0] == "--mixed-panes-only")
+        {
+            var path = Path.Combine(Path.GetTempPath(), "DeskMux.MixedPanes", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(path); RunMixedAppPaneChecks(path); return 0;
+        }
+        if (args.Length > 0 && args[0] == "--pane-diagnostics")
+        {
+            var windows = new WindowSystem(new(), Path.Combine(Path.GetTempPath(), "DeskMux.PaneDiagnostics"), new TestLog());
+            foreach (var snapshot in windows.EnumerateWindows().Where(w => args.Skip(1).Contains(w.Fingerprint.ProcessName, StringComparer.OrdinalIgnoreCase)))
+            {
+                var entry = new ManagedWindow { Handle = snapshot.Handle, Fingerprint = snapshot.Fingerprint, Layout = snapshot.Layout };
+                Console.WriteLine(JsonSerializer.Serialize(new { App = snapshot.Fingerprint.ProcessName, Minimum = windows.GetMinimumPaneSize(entry), Outer = snapshot.Layout.Bounds, Visible = snapshot.VisibleBounds }));
+            }
+            return 0;
+        }
         if (args.Length > 0 && args[0] == "--watchdog")
         {
             RecoveryWatcher.Run(int.Parse(args[1]), long.Parse(args[2]), args[3]);
@@ -149,6 +164,7 @@ internal static class Program
             Check(windowSystem.GetMonitors().Any(m => reachable.X >= m.WorkArea.X && reachable.Y >= m.WorkArea.Y && (long)reachable.X + reachable.Width <= (long)m.WorkArea.X + m.WorkArea.Width && (long)reachable.Y + reachable.Height <= (long)m.WorkArea.Y + m.WorkArea.Height), "A disconnected monitor layout is clamped inside an available work area");
 
             RunCrashRecovery(directory, handles[0], handles[2]);
+            RunMixedAppPaneChecks(directory);
             Console.WriteLine($"PASS: {_checks} real Windows integration checks. Only isolated fixture windows were managed.");
             return 0;
         }
@@ -172,8 +188,8 @@ internal static class Program
         Check(manager.OpenPane(bravo.Handle, alpha.Handle, PaneOrientation.Vertical), "Existing native applications form left/right panes");
         var canvas = dev.PaneCanvases.Single();
         var calculated = PaneTree.Calculate(canvas);
-        WaitFor(() => Near(windows.Inspect(alpha.Handle)!.Layout.Bounds, calculated[alpha.Id].Bounds) &&
-            Near(windows.Inspect(bravo.Handle)!.Layout.Bounds, calculated[bravo.Id].Bounds), "Native pane rectangles match exact physical work-area geometry");
+        WaitFor(() => Near(windows.Inspect(alpha.Handle)!.VisibleBounds!, calculated[alpha.Id].Bounds) &&
+            Near(windows.Inspect(bravo.Handle)!.VisibleBounds!, calculated[bravo.Id].Bounds), "Native visible pane edges match exact physical work-area geometry");
         Check(!IsIconic((nint)bravo.Handle) && !IsZoomed((nint)bravo.Handle), "Pane placement restores maximized or minimized native state");
         Check(!manager.OpenPane(charlie.Handle, bravo.Handle, PaneOrientation.Horizontal), "Cross-session native pane selection requires confirmation");
         Check(manager.OpenPane(charlie.Handle, bravo.Handle, PaneOrientation.Horizontal, true), "Confirmed native selection moves membership and creates a nested bottom pane");
@@ -195,7 +211,7 @@ internal static class Program
         }
         manager.TogglePaneZoom(charlie.Handle);
         WaitFor(() => !Visible(alpha.Handle) && !Visible(bravo.Handle) && Visible(charlie.Handle), "Zoom safely hides sibling native panes");
-        Check(Near(windows.Inspect(charlie.Handle)!.Layout.Bounds, canvas.MonitorWorkArea), "Zoomed native pane fills the canvas");
+        Check(Near(windows.Inspect(charlie.Handle)!.VisibleBounds!, canvas.MonitorWorkArea), "Zoomed native pane fills the canvas");
         manager.SwitchTo(images.Id);
         WaitFor(() => !Visible(alpha.Handle) && !Visible(bravo.Handle) && !Visible(charlie.Handle), "Switching away hides the zoomed session");
         manager.SwitchTo(dev.Id);
@@ -210,7 +226,10 @@ internal static class Program
         Check(SetWindowPos((nint)alpha.Handle, 0, desired.X + 15, desired.Y + 15, 430, 300, 0x0014), "Fixture accepts a manual pane move");
         manager.TrackWindow(alpha.Handle, false);
         manager.FlushPaneLayoutChanges();
-        Check(Near(windows.Inspect(alpha.Handle)!.Layout.Bounds, desired), "Debounced reflow restores authoritative native pane geometry");
+        Check(Near(windows.Inspect(alpha.Handle)!.VisibleBounds!, desired), "Debounced reflow restores authoritative native pane geometry");
+        var calls = store.Saves;
+        manager.TrackWindow(alpha.Handle, false); manager.FlushPaneLayoutChanges();
+        Check(store.Saves == calls, "Visible frame compensation does not create a reflow loop");
         manager.RemoveWindow(charlie.Id);
         Check(Visible(charlie.Handle) && IsWindow((nint)charlie.Handle), "Removing native pane leaves application visible and running");
         Check(PaneTree.Leaves(dev.PaneCanvases.Single()).Count == 2, "Native pane removal collapses the split");
@@ -218,6 +237,52 @@ internal static class Program
         manager.ReleasePane(bravo.Id);
         manager.ReleasePane(alpha.Id);
         Check(dev.PaneCanvases.Count == 0 && dev.Windows.Count == 2, "Releasing native panes preserves session members as floating windows");
+    }
+
+    private static void RunMixedAppPaneChecks(string directory)
+    {
+        var firstManifest = Path.Combine(directory, "mixed-first.json");
+        var secondManifest = Path.Combine(directory, "mixed-second.json");
+        using var first = StartSelf("--fixture", firstManifest, Guid.NewGuid().ToString("N"));
+        using var second = StartSelf("--fixture", secondManifest, Guid.NewGuid().ToString("N"));
+        SessionManager? manager = null;
+        try
+        {
+            WaitFor(() => File.Exists(firstManifest) && File.Exists(secondManifest), "mixed-app fixtures started");
+            var a = JsonSerializer.Deserialize<long[]>(File.ReadAllText(firstManifest))!;
+            var b = JsonSerializer.Deserialize<long[]>(File.ReadAllText(secondManifest))!;
+            var log = new TestLog(); var state = new WorkspaceState();
+            var windows = new WindowSystem(state.Settings, Path.Combine(directory, "mixed"), log);
+            manager = new SessionManager(state, windows, new CountingStore(new JsonStateStore(Path.Combine(directory,"mixed"),log)), log);
+            var session = manager.CreateSession("MIXED"); manager.AddWindow(a[0],session.Id);
+            Check(manager.OpenPane(b[0],a[0],PaneOrientation.Vertical), "Windows from two processes form a pane pair");
+            Check(manager.OpenPane(a[2],b[0],PaneOrientation.Horizontal,entireCanvas:true), "Third native app spans the bottom beneath both existing apps");
+            var bottom = session.Windows.Single(w=>w.Handle==a[2]);
+            var canvas = session.PaneCanvases.Single();
+            Check(bottom.Layout.Bounds.Width==canvas.MonitorWorkArea.Width && bottom.Layout.Bounds.Height>=600,
+                "Native application minimum height reallocates space from the top row");
+            Check(manager.OpenPane(b[1],a[2],PaneOrientation.Vertical,entireCanvas:true), "Fourth native app fits beside the complete existing layout");
+            var left = session.Windows.Single(w=>w.Handle==a[0]);
+            manager.ResizePane(left.Handle,PaneDirection.Right);
+            Check(manager.LastError==null && !manager.HidingPaused && PaneTree.Leaves(canvas).Count==4, "Mixed-process resizing keeps all four panes and session handling active");
+            foreach(var entry in session.Windows)
+                Check(windows.Inspect(entry.Handle)!.VisibleBounds==entry.Layout.Bounds, "Mixed-process visible edges exactly match the pane plan");
+            Check(log.Events.Contains("window.layout.batch.applied"), "Mixed-process apps use a verified simultaneous placement batch");
+            manager.BeginPaneMoveSize(left.Handle);
+            var outer = windows.Inspect(left.Handle)!.Layout.Bounds;
+            SetWindowPos((nint)left.Handle,0,outer.X,outer.Y,outer.Width+40,outer.Height,0x0014);
+            manager.EndPaneMoveSize(left.Handle);
+            Check(manager.LastError==null && PaneTree.Leaves(canvas).Count==4, "Native mouse resize preserves the four-app pane tree");
+            var raw = windows.Inspect(left.Handle)!.Layout;
+            Check(windows.ApplyLayout(left,raw).Success, "Rollback accepts native invisible borders extending outside the work area");
+        }
+        finally
+        {
+            manager?.Shutdown();
+            if(!first.HasExited) first.Kill(entireProcessTree:true);
+            if(!second.HasExited) second.Kill(entireProcessTree:true);
+            first.WaitForExit(3000); second.WaitForExit(3000);
+        }
     }
 
     private static void RunCrashRecovery(string parentDirectory, long handle, long zoomTarget)
@@ -280,6 +345,7 @@ internal static class Program
             Top = 100 + index * 40,
             Width = 420,
             Height = 290,
+            MinHeight = index == 2 ? 620 : 100,
             Background = new SolidColorBrush(Color.FromRgb(25, 32, 45)),
             Content = new TextBlock { Text = $"DeskMux test fixture {index + 1}\nSeparate native window · same process", Foreground = Brushes.White, FontSize = 19, Margin = new Thickness(22) }
         }).ToArray();

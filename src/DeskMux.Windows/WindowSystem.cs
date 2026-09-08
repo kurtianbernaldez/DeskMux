@@ -102,8 +102,22 @@ public sealed class WindowSystem : IWindowSystem
             NativeMethods.ShowWindowAsync(hwnd, NativeMethods.SwRestore);
             NativeDesktop.WaitUntil(() => !NativeMethods.IsIconic(hwnd), 150);
         }
-        if (NativeMethods.GetForegroundWindow() == hwnd || NativeMethods.SetForegroundWindow(hwnd))
+        NativeMethods.SetForegroundWindow(hwnd);
+        if (NativeDesktop.WaitUntil(() => NativeMethods.GetForegroundWindow() == hwnd, 80))
             return WindowOperationResult.Ok;
+
+        // The global shortcut is dispatched from our hook thread to WPF. Temporarily
+        // share the foreground input queue for this explicit focus request only.
+        var foreground = NativeMethods.GetForegroundWindow();
+        var foregroundThread = NativeMethods.GetWindowThreadProcessId(foreground, out _);
+        var currentThread = NativeMethods.GetCurrentThreadId();
+        if (foregroundThread != 0 && foregroundThread != currentThread && NativeDesktop.Responds(foreground) &&
+            NativeMethods.AttachThreadInput(currentThread, foregroundThread, true))
+        {
+            try { NativeMethods.SetForegroundWindow(hwnd); }
+            finally { NativeMethods.AttachThreadInput(currentThread, foregroundThread, false); }
+            if (NativeDesktop.WaitUntil(() => NativeMethods.GetForegroundWindow() == hwnd, 150)) return WindowOperationResult.Ok;
+        }
 
         var flash = new NativeMethods.FlashInfo
         {
@@ -114,6 +128,7 @@ public sealed class WindowSystem : IWindowSystem
     }
 
     public IReadOnlyList<MonitorDescriptor> GetMonitors() => NativeDesktop.GetMonitors();
+    public PaneMinimumSize GetMinimumPaneSize(ManagedWindow window) => NativeDesktop.GetMinimumPaneSize(window);
 
     public WindowOperationResult ApplyLayout(ManagedWindow window, WindowLayout layout, bool activate = false)
     {
@@ -141,9 +156,8 @@ public sealed class WindowSystem : IWindowSystem
 
     public IReadOnlyList<WindowOperationResult> ApplyLayouts(IReadOnlyList<(ManagedWindow Window, WindowLayout Layout)> placements)
     {
-        // A batch is useful for separate document windows belonging to one application.
-        // Mixed applications, minimized/maximized windows, and uncertain eligibility use
-        // individual verified operations so they retain a safe restoration boundary.
+        // Responsive top-level windows share the desktop parent, including windows
+        // from different apps. Restore minimized/maximized windows individually.
         if (placements.Count < 2)
             return placements.Select(item => ApplyLayout(item.Window, item.Layout)).ToArray();
         if (!NativeDesktop.CanDeferLayouts(placements, _settings, out var preflightReason))
@@ -163,9 +177,11 @@ public sealed class WindowSystem : IWindowSystem
             {
                 try
                 {
-                    if (!NativeDesktop.VerifyLayout(window, layout.Bounds))
+                    if (!NativeDesktop.VerifyLayout(window, layout))
                     {
-                        results.Add(Fail("layout", window, "The application did not accept the deferred pane size or position."));
+                        // Restoring an app or crossing a display edge can change its
+                        // non-client insets after the first placement has completed.
+                        results.Add(ApplyLayout(window, layout));
                         continue;
                     }
                     _journal.Remove(window);
@@ -278,7 +294,38 @@ internal static class NativeDesktop
             MonitorWorkArea = monitor.WorkArea,
             Dpi = monitor.Dpi,
             RestoreToMaximized = (placement.Flags & 2) != 0
-        }, NativeMethods.IsWindowVisible(hwnd));
+        }, NativeMethods.IsWindowVisible(hwnd)) { VisibleBounds = !minimized && !maximized ? VisibleBounds(hwnd) : null };
+    }
+
+    internal static PixelRect? VisibleBounds(nint hwnd)
+    {
+        using var dpi = new DpiScope();
+        if (NativeMethods.DwmGetWindowRect(hwnd, 9, out var frame, Marshal.SizeOf<NativeMethods.Rect>()) == 0 && frame.Right > frame.Left && frame.Bottom > frame.Top)
+            return frame.ToPixelRect();
+        return NativeMethods.GetWindowRect(hwnd, out var outer) ? outer.ToPixelRect() : null;
+    }
+
+    private static PixelRect OuterBounds(nint hwnd, PixelRect visible)
+    {
+        if (!NativeMethods.GetWindowRect(hwnd, out var outer) || VisibleBounds(hwnd) is not { } frame || NativeMethods.IsIconic(hwnd) || NativeMethods.IsZoomed(hwnd)) return visible;
+        var left = Math.Clamp(frame.X - outer.Left, 0, 64);
+        var top = Math.Clamp(frame.Y - outer.Top, 0, 64);
+        var right = Math.Clamp(outer.Right - frame.X - frame.Width, 0, 64);
+        var bottom = Math.Clamp(outer.Bottom - frame.Y - frame.Height, 0, 64);
+        return new(visible.X - left, visible.Y - top, visible.Width + left + right, visible.Height + top + bottom);
+    }
+
+    internal static PaneMinimumSize GetMinimumPaneSize(ManagedWindow window)
+    {
+        using var dpi = new DpiScope();
+        var fallback = new PaneMinimumSize(PaneTree.MinimumWidth, PaneTree.MinimumHeight);
+        if (!IsSameWindow(window)) return fallback;
+        var hwnd = (nint)window.Handle;
+        var info = new NativeMethods.MinMaxInfo();
+        if (NativeMethods.GetMinMaxInfo(hwnd, 0x0024, 0, ref info, 0x0002 | 0x0020, 100, out _) == 0) return fallback;
+        var expanded = OuterBounds(hwnd, new(0, 0, 100, 100));
+        return new(Math.Max(fallback.Width, info.MinTrackSize.X - (expanded.Width - 100)),
+            Math.Max(fallback.Height, info.MinTrackSize.Y - (expanded.Height - 100)));
     }
 
     internal static bool IsEligible(nint hwnd, AppSettings settings, out WindowFingerprint? fingerprint)
@@ -405,10 +452,11 @@ internal static class NativeDesktop
             WindowShowState.Minimized => NativeMethods.SwShowMinNoActive,
             _ => NativeMethods.SwShowNoActivate
         });
-        placement.NormalPosition = NativeMethods.Rect.From(layout.Bounds with
+        var restoredBounds = layout.UseVisibleFrameBounds ? OuterBounds(hwnd, layout.Bounds) : layout.Bounds;
+        placement.NormalPosition = NativeMethods.Rect.From(restoredBounds with
         {
-            X = layout.Bounds.X - (monitor.WorkArea.X - monitor.Bounds.X),
-            Y = layout.Bounds.Y - (monitor.WorkArea.Y - monitor.Bounds.Y)
+            X = restoredBounds.X - (monitor.WorkArea.X - monitor.Bounds.X),
+            Y = restoredBounds.Y - (monitor.WorkArea.Y - monitor.Bounds.Y)
         });
         // Ignore maximized/minimized positions from a removed display; Windows derives them.
         placement.MinPosition = new() { X = -1, Y = -1 };
@@ -443,9 +491,9 @@ internal static class NativeDesktop
             string.Equals(item.DeviceName, requested.MonitorDevice, StringComparison.OrdinalIgnoreCase));
         if (monitor is null) return WindowOperationResult.Fail("The pane monitor disconnected. Recalculate the canvas before arranging its windows.");
         var bounds = requested.Bounds;
-        if (bounds.X < monitor.WorkArea.X || bounds.Y < monitor.WorkArea.Y ||
+        if (requested.UseVisibleFrameBounds && (bounds.X < monitor.WorkArea.X || bounds.Y < monitor.WorkArea.Y ||
             (long)bounds.X + bounds.Width > (long)monitor.WorkArea.X + monitor.WorkArea.Width ||
-            (long)bounds.Y + bounds.Height > (long)monitor.WorkArea.Y + monitor.WorkArea.Height)
+            (long)bounds.Y + bounds.Height > (long)monitor.WorkArea.Y + monitor.WorkArea.Height))
             return WindowOperationResult.Fail("The pane rectangle is outside its monitor work area.");
 
         var placement = NativeMethods.WindowPlacement.Create();
@@ -465,19 +513,21 @@ internal static class NativeDesktop
         Responds(hwnd);
         if (!WaitUntil(() => NativeMethods.IsWindowVisible(hwnd) && !NativeMethods.IsIconic(hwnd) && !NativeMethods.IsZoomed(hwnd), 180))
             return WindowOperationResult.Fail("The application did not accept restoration to a normal visible window.");
-        // Different applications have different UI threads. Individual asynchronous placements
-        // plus verification provide a reliable rollback boundary; cross-thread deferred batches do not.
-        if (!NativeMethods.SetWindowPos(hwnd, 0, bounds.X, bounds.Y, bounds.Width, bounds.Height,
-            NativeMethods.SwpNoZOrder | NativeMethods.SwpNoActivate | NativeMethods.SwpAsyncWindowPos))
-            return NativeFailure("position the pane");
-        Responds(hwnd);
-        if (!WaitUntil(() => IsSameWindow(window) && NativeMethods.GetWindowRect(hwnd, out var actual) &&
-            actual.ToPixelRect() == bounds && NativeMethods.IsWindowVisible(hwnd) &&
-            !NativeMethods.IsIconic(hwnd) && !NativeMethods.IsZoomed(hwnd), 180))
+        NativeMethods.DwmFlush();
+        var positioned = false;
+        for (var attempt = 0; attempt < (requested.UseVisibleFrameBounds ? 3 : 1); attempt++)
+        {
+            var nativeBounds = requested.UseVisibleFrameBounds ? OuterBounds(hwnd, bounds) : bounds;
+            if (!NativeMethods.SetWindowPos(hwnd, 0, nativeBounds.X, nativeBounds.Y, nativeBounds.Width, nativeBounds.Height,
+                NativeMethods.SwpNoZOrder | NativeMethods.SwpNoActivate | NativeMethods.SwpAsyncWindowPos))
+                return NativeFailure("position the pane");
+            if (VerifyLayout(window, requested)) { positioned = true; break; }
+        }
+        if (!positioned)
             return WindowOperationResult.Fail("The application did not accept the pane size or position. Its minimum size may be larger than the pane.");
         appliedLayout = new WindowLayout
         {
-            Bounds = bounds, ShowState = WindowShowState.Normal, RestoreToMaximized = false,
+            Bounds = bounds, ShowState = WindowShowState.Normal, RestoreToMaximized = false, UseVisibleFrameBounds = requested.UseVisibleFrameBounds,
             MonitorDevice = monitor.DeviceName, MonitorId = monitor.StableId,
             MonitorWorkArea = monitor.WorkArea, Dpi = monitor.Dpi
         };
@@ -490,7 +540,6 @@ internal static class NativeDesktop
         try
         {
             var monitors = GetMonitors();
-            uint owningThread = 0;
             var handles = new HashSet<long>();
             foreach (var (window, layout) in placements)
             {
@@ -503,10 +552,6 @@ internal static class NativeDesktop
                 { reason = "Windows does not allow batch control of a pane."; return false; }
                 if (!Responds(hwnd))
                 { reason = "A pane did not respond to the batch readiness check."; return false; }
-                var thread = NativeMethods.GetWindowThreadProcessId(hwnd, out _);
-                if (thread == 0 || owningThread != 0 && owningThread != thread)
-                { reason = "The panes belong to different native UI threads."; return false; }
-                owningThread = thread;
                 var monitor = monitors.FirstOrDefault(item =>
                     !string.IsNullOrEmpty(layout.MonitorId) ? string.Equals(item.StableId, layout.MonitorId, StringComparison.OrdinalIgnoreCase) :
                     string.Equals(item.DeviceName, layout.MonitorDevice, StringComparison.OrdinalIgnoreCase));
@@ -531,10 +576,10 @@ internal static class NativeDesktop
         if (batch == 0) { reason = NativeFailure("begin deferred pane positioning").Error!; return false; }
         foreach (var (window, layout) in placements)
         {
-            var bounds = layout.Bounds;
+            var bounds = layout.UseVisibleFrameBounds ? OuterBounds((nint)window.Handle, layout.Bounds) : layout.Bounds;
             // DeferWindowPos accepts a smaller documented flag set than SetWindowPos.
             // SWP_ASYNCWINDOWPOS is rejected with ERROR_INVALID_PARAMETER (87), so the
-            // same-thread, responsive-window preflight is the batch's readiness boundary.
+            // responsive-window preflight is the batch's readiness boundary.
             batch = NativeMethods.DeferWindowPos(batch, (nint)window.Handle, 0, bounds.X, bounds.Y, bounds.Width, bounds.Height,
                 NativeMethods.SwpNoZOrder | NativeMethods.SwpNoActivate);
             // On failure Windows destroys the internal batch; EndDeferWindowPos must not be called.
@@ -545,13 +590,14 @@ internal static class NativeDesktop
         return false;
     }
 
-    internal static bool VerifyLayout(ManagedWindow window, PixelRect bounds)
+    internal static bool VerifyLayout(ManagedWindow window, WindowLayout layout)
     {
         using var dpi = new DpiScope();
         var hwnd = (nint)window.Handle;
         Responds(hwnd);
+        NativeMethods.DwmFlush();
         return WaitUntil(() => IsSameWindow(window) && NativeMethods.GetWindowRect(hwnd, out var actual) &&
-            actual.ToPixelRect() == bounds && NativeMethods.IsWindowVisible(hwnd) &&
+            (layout.UseVisibleFrameBounds ? VisibleBounds(hwnd) : actual.ToPixelRect()) == layout.Bounds && NativeMethods.IsWindowVisible(hwnd) &&
             !NativeMethods.IsIconic(hwnd) && !NativeMethods.IsZoomed(hwnd), 180);
     }
 
@@ -566,7 +612,7 @@ internal static class NativeDesktop
         return condition();
     }
 
-    private static bool Responds(nint hwnd)
+    internal static bool Responds(nint hwnd)
     {
         // A window can briefly stop answering while it processes a completed batch resize.
         // Give it a second bounded chance before treating it as protected or hung.

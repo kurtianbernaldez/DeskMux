@@ -13,7 +13,7 @@ public sealed class WinEventTracker : IDisposable
     private readonly NativeMethods.WinEventProc _callback;
     private readonly List<nint> _hooks = [];
     private readonly ConcurrentDictionary<long, byte> _pendingWindows = new();
-    private readonly ConcurrentQueue<(long Handle, bool Foreground, bool MoveSizeStarted, bool Coalesced, LaunchWindowEvent? Observation)> _events = new();
+    private readonly ConcurrentQueue<(long Handle, bool Foreground, bool MoveSizeStarted, bool MoveSizeEnded, bool Coalesced, LaunchWindowEvent? Observation)> _events = new();
     private BackgroundMessageLoop? _loop;
     private int _draining;
     private volatile bool _disposed;
@@ -29,6 +29,7 @@ public sealed class WinEventTracker : IDisposable
     public event Action<long, bool>? WindowChanged;
     /// <summary>Fires when Windows begins an interactive move or resize of a top-level window.</summary>
     public event Action<long>? MoveSizeStarted;
+    public event Action<long>? MoveSizeEnded;
     /// <summary>Precise show/foreground events delivered on a worker thread, with original monotonic event time.</summary>
     public event Action<LaunchWindowEvent>? WindowObserved;
     public event Action? DisplayChanged;
@@ -72,9 +73,10 @@ public sealed class WinEventTracker : IDisposable
         var foreground = eventId == 0x0003;
         var shown = eventId == 0x8002;
         var moveSizeStarted = eventId == 0x000A;
+        var moveSizeEnded = eventId == 0x000B;
         // Foreground and show events retain their kind and original occurrence time even
         // when geometry updates are already queued. Delayed old events must not claim a launch.
-        var coalesced = !foreground && !shown && !moveSizeStarted;
+        var coalesced = !foreground && !shown && !moveSizeStarted && !moveSizeEnded;
         if (coalesced && !_pendingWindows.TryAdd(handle, 0)) return;
         LaunchWindowEvent? observation = null;
         if (foreground || shown)
@@ -83,7 +85,7 @@ public sealed class WinEventTracker : IDisposable
             var age = unchecked((uint)now - time); // DWORD uptime wraps every 49.7 days.
             observation = new(handle, foreground ? LaunchWindowEventKind.Foreground : LaunchWindowEventKind.Shown, now - age);
         }
-        _events.Enqueue((handle, foreground, moveSizeStarted, coalesced, observation));
+        _events.Enqueue((handle, foreground, moveSizeStarted, moveSizeEnded, coalesced, observation));
         if (Interlocked.CompareExchange(ref _draining, 1, 0) == 0)
             ThreadPool.QueueUserWorkItem(_ => Drain());
     }
@@ -107,6 +109,7 @@ public sealed class WinEventTracker : IDisposable
                         if (item.Coalesced) _pendingWindows.TryRemove(item.Handle, out _);
                         if (_disposed) return;
                         if (item.MoveSizeStarted) MoveSizeStarted?.Invoke(item.Handle);
+                        if (item.MoveSizeEnded) MoveSizeEnded?.Invoke(item.Handle);
                         WindowChanged?.Invoke(item.Handle, item.Foreground);
                     });
                 }

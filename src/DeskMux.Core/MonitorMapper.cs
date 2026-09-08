@@ -26,14 +26,14 @@ public static class MonitorMapper
         var y = ClampCoordinate(work.Y + offsetY * scale, work.Y, (long)work.Y + work.Height - height);
         return new WindowLayout
         {
-            Bounds = new PixelRect(x, y, width, height), ShowState = layout.ShowState, RestoreToMaximized = layout.RestoreToMaximized,
+            Bounds = new PixelRect(x, y, width, height), ShowState = layout.ShowState, RestoreToMaximized = layout.RestoreToMaximized, UseVisibleFrameBounds = layout.UseVisibleFrameBounds,
             MonitorDevice = target.DeviceName, MonitorId = target.StableId, MonitorWorkArea = work, Dpi = newDpi
         };
     }
 
     public static WindowLayout Clone(WindowLayout layout) => new()
     {
-        Bounds = layout.Bounds with { }, ShowState = layout.ShowState, RestoreToMaximized = layout.RestoreToMaximized, MonitorDevice = layout.MonitorDevice,
+        Bounds = layout.Bounds with { }, ShowState = layout.ShowState, RestoreToMaximized = layout.RestoreToMaximized, MonitorDevice = layout.MonitorDevice, UseVisibleFrameBounds = layout.UseVisibleFrameBounds,
         MonitorId = layout.MonitorId, MonitorWorkArea = layout.MonitorWorkArea with { }, Dpi = layout.Dpi
     };
 

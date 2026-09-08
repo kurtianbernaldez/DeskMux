@@ -2,7 +2,7 @@
   #define MyAppVersion "0.1.0.0"
 #endif
 #ifndef MyAppDisplayVersion
-  #define MyAppDisplayVersion "0.1.0-alpha.1"
+  #define MyAppDisplayVersion "0.1.0"
 #endif
 
 [Setup]
@@ -42,7 +42,7 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Name: "startup"; Description: "Start DeskMux when I sign in"; GroupDescription: "Startup:"; Flags: unchecked
 
 [Files]
-Source: "..\artifacts\DeskMux-win-x64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+#include "..\artifacts\release\installer-files.iss"
 
 [Icons]
 Name: "{group}\DeskMux"; Filename: "{app}\DeskMux.exe"

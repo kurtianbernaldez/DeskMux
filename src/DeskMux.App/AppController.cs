@@ -20,7 +20,10 @@ public sealed class AppController : IDisposable
     private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource? _paneRequest;
     private readonly DispatcherTimer _saveTimer, _prefixTimer, _refreshTimer, _paneTimer;
+    private readonly DispatcherTimer _displayTimer;
     private readonly HwndSource _messageWindow;
+    private readonly PaneGuideOverlays _guides;
+    private readonly PaneDragController _drag;
     private TrayController? _tray;
     private ManagerWindow? _manager;
     private PrefixOverlay? _prefix;
@@ -48,6 +51,8 @@ public sealed class AppController : IDisposable
         ThemeManager.Apply(app, state.Settings.Theme);
         Windows = new WindowSystem(state.Settings, directory, Log);
         Sessions = new SessionManager(state, Windows, store, Log);
+        _guides = new PaneGuideOverlays(this);
+        _drag = new PaneDragController(this);
         Action<Action> dispatch = action => { if (!_disposed && !_app.Dispatcher.HasShutdownStarted) _app.Dispatcher.BeginInvoke(action); };
         _keyboard = new KeyboardManager(state.Settings, dispatch, Log);
         _tracker = new WinEventTracker(dispatch, Log);
@@ -56,6 +61,8 @@ public sealed class AppController : IDisposable
         _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); Sessions.Save(); };
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
         _refreshTimer.Tick += (_, _) => { _refreshTimer.Stop(); _manager?.Refresh(); _tray?.Refresh(); };
+        _displayTimer = new DispatcherTimer { Interval=TimeSpan.FromMilliseconds(800) };
+        _displayTimer.Tick += (_,_)=>{_displayTimer.Stop();Sessions.HandleDisplayChange();};
         _paneTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _paneTimer.Tick += (_, _) => { _paneTimer.Stop(); Sessions.FlushPaneLayoutChanges(); };
         _prefixTimer = new DispatcherTimer();
@@ -68,6 +75,7 @@ public sealed class AppController : IDisposable
             _commandWindow = overlaySource;
             if (Windows.Inspect(_commandWindow) == null) _commandWindow = _lastExternalWindow;
             Sessions.TrackWindow(_commandWindow, true);
+            _guides.CommandMode = true;
             _prefix?.Close(); _prefix = new PrefixOverlay(this);
             // Keep commands aimed at the last managed application when DeskMux has focus,
             // while placing the overlay on the monitor where the prefix was invoked.
@@ -91,11 +99,12 @@ public sealed class AppController : IDisposable
             Sessions.TrackWindow(handle, foreground);
             if (!foreground) { _paneTimer.Stop(); _paneTimer.Start(); }
         };
-        _tracker.MoveSizeStarted += handle => Sessions.ReleasePaneForManualMove(handle);
+        _tracker.MoveSizeStarted += handle => { _drag.Begin(handle); _guides.BeginResize(handle); };
+        _tracker.MoveSizeEnded += handle => { _drag.End(handle); _guides.EndResize(handle); };
         _messageWindow = new HwndSource(new HwndSourceParameters("DeskMux notifications") { Width = 0, Height = 0, WindowStyle = 0 });
         _messageWindow.AddHook((nint hwnd, int message, nint wparam, nint lparam, ref bool handled) =>
         {
-            if (message is 0x007E or 0x02E0 or 0x001A) dispatch(Sessions.HandleDisplayChange);
+            if (message is 0x007E or 0x02E0 or 0x001A || message == 0x0218 && wparam.ToInt64() is 7 or 18) dispatch(()=>{_displayTimer.Stop();_displayTimer.Start();});
             return nint.Zero;
         });
     }
@@ -148,11 +157,14 @@ public sealed class AppController : IDisposable
         if (_manager == null) { _manager = new ManagerWindow(this); _manager.Closed += (_, _) => _manager = null; }
         _manager.Navigate(page); _manager.Show(); if (_manager.WindowState == WindowState.Minimized) _manager.WindowState = WindowState.Normal; _manager.Activate();
     }
-    public void CancelPrefix() { _prefixTimer.Stop(); _keyboard.CancelCommandMode(); _prefix?.Close(); _prefix = null; }
+    public void CancelPrefix() { _guides.CommandMode = false; _prefixTimer.Stop(); _keyboard.CancelCommandMode(); _prefix?.Close(); _prefix = null; }
     private void ExecuteCommand(CommandGesture gesture)
     {
         CancelPrefix();
         if (_dialog != null) { if (_dialog is not SessionPicker and not PanePicker) _keyboard.EndPickerMode(); return; }
+        var binding = Hotkeys.Resolve(Sessions.State.Settings, gesture);
+        if (binding == null) return;
+        gesture = binding.Default;
         var key = gesture.VirtualKey;
         if (key is >= 0x25 and <= 0x28)
         {
@@ -177,6 +189,11 @@ public sealed class AppController : IDisposable
             case 0x52: if (Sessions.ActiveSession != null) Rename(Sessions.ActiveSession.Id); break;
             case 0x4D: PickSession(true, _commandWindow); break;
             case 0x41: AddForeground(); break;
+            case 0x55: Sessions.UndoPaneLayout(); break;
+            case 0x46:
+                var pane = Sessions.ActiveSession?.Windows.FirstOrDefault(w => w.Handle == _commandWindow && !w.IsMissing);
+                if (pane != null) Sessions.ReleasePane(pane.Id);
+                break;
             case 0x58:
                 var window = Sessions.ActiveSession?.Windows.FirstOrDefault(w => w.Handle == _commandWindow && !w.IsMissing);
                 if (window != null) Sessions.RemoveWindow(window.Id); else Notify("Window is not in this session", "Focus a managed application and try again.");
@@ -221,7 +238,7 @@ public sealed class AppController : IDisposable
                 .ThenBy(w => w.Fingerprint.Title, StringComparer.OrdinalIgnoreCase).ThenBy(w => w.Handle)
                 .Select(w => RunningPaneChoice(w, sessionId)).ToList();
             var launchers = Sessions.State.Settings.LaunchProfiles.Select(p => new PaneChoice(null, CopyProfile(p), "Launch application")).ToList();
-            var picker = new PanePicker(windows, launchers);
+            var picker = new PanePicker(windows, launchers, orientation == PaneOrientation.Horizontal ? "Open pane below" : "Open pane to the right");
             var choice = await ShowPanePickerAsync(picker, sourceHandle, request.Token);
             if (choice == null || request.IsCancellationRequested)
             {
@@ -288,17 +305,19 @@ public sealed class AppController : IDisposable
     {
         cancellation.ThrowIfCancellationRequested();
         var completion = new TaskCompletionSource<PaneChoice?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _guides.Operation = true;
         _pickerSource = Windows.ForegroundWindow; _dialog = picker;
         var registration = cancellation.Register(() => _app.Dispatcher.BeginInvoke(() => { if (picker.IsVisible) picker.Close(); }));
         picker.Closed += (_, _) =>
         {
             registration.Dispose();
+            _guides.Operation = false;
             if (ReferenceEquals(_dialog, picker)) _dialog = null;
             _keyboard.EndPickerMode(); completion.TrySetResult(picker.SelectedChoice);
         };
         _keyboard.BeginPickerMode();
         try { UIHelpers.ShowNearMonitor(picker, Windows, sourceHandle, false); }
-        catch { registration.Dispose(); _keyboard.EndPickerMode(); _dialog = null; throw; }
+        catch { _guides.Operation = false; registration.Dispose(); _keyboard.EndPickerMode(); _dialog = null; throw; }
         return completion.Task;
     }
     private bool ConfirmPaneMove(WindowSnapshot window, string source, string target)
@@ -400,6 +419,7 @@ public sealed class AppController : IDisposable
         var missing = session.Windows.Where(w => w.IsMissing).ToArray();
         if (missing.Length == 0)
         {
+            if(session.RestorePresetId is {} readyPreset) Sessions.ApplyLayoutPreset(readyPreset);
             if (!quietWhenComplete) Notify("Session ready", session.Name + " has no missing applications.");
             return;
         }
@@ -436,6 +456,7 @@ public sealed class AppController : IDisposable
             {
                 // Restoring an inactive session can continue in the background. Do not pull
                 // the user back if they deliberately switched elsewhere during a slow launch.
+                if (session.RestorePresetId is {} presetId) Sessions.ApplyLayoutPreset(presetId);
                 if (Sessions.State.ActiveSessionId == sessionId) Switch(sessionId);
                 var remaining = session.Windows.Count(w => w.IsMissing);
                 if (!quietWhenComplete || failures.Count > 0)
@@ -474,6 +495,7 @@ public sealed class AppController : IDisposable
         finally { _dialog = null; }
         ReportError();
     }
+    internal void RecordShortcut(bool recording) => _keyboard.SetRecording(recording);
     public void SettingsChanged() { _keyboard.RefreshSettings(); Sessions.Save(); _tray?.Refresh(); _manager?.RefreshStatus(); }
     public void ApplyTheme(string preset, ThemePalette? custom = null)
     {
@@ -550,8 +572,8 @@ public sealed class AppController : IDisposable
         if (_disposed) return; _disposed = true;
         _lifetime.Cancel(); _paneRequest?.Cancel();
         if (_dialog is IKeyboardPicker) _dialog.Close();
-        _saveTimer.Stop(); _refreshTimer.Stop(); _paneTimer.Stop(); CancelPrefix(); _launcher.Dispose(); _keyboard.Dispose(); _tracker.Dispose();
-        Sessions.Shutdown(); _tray?.Dispose(); _messageWindow.Dispose(); _watchdog?.Dispose();
+        _saveTimer.Stop(); _refreshTimer.Stop(); _paneTimer.Stop(); _displayTimer.Stop(); CancelPrefix(); _launcher.Dispose(); _keyboard.Dispose(); _tracker.Dispose();
+        _drag.Dispose(); _guides.Dispose(); Sessions.Shutdown(); _tray?.Dispose(); _messageWindow.Dispose(); _watchdog?.Dispose();
         _lifetime.Dispose();
     }
 }

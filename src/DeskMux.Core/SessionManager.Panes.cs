@@ -5,9 +5,10 @@ public sealed partial class SessionManager
     private bool _applyingPanes;
     private readonly HashSet<Guid> _pendingPaneCanvases = [];
     private HashSet<Guid>? _paneTouched;
+    private readonly HashSet<long> _interactivePanes = [];
 
     /// <summary>Commits selection only after a picker has resolved a specific native window.</summary>
-    public bool OpenPane(long targetHandle, long sourceHandle, PaneOrientation orientation, bool allowMove = false)
+    public bool OpenPane(long targetHandle, long sourceHandle, PaneOrientation orientation, bool allowMove = false, bool entireCanvas = false)
     {
         var success = false;
         Change(() =>
@@ -55,7 +56,8 @@ public sealed partial class SessionManager
                     }
                 }
                 canvas.ZoomedLeafId = null;
-                PaneTree.Split(canvas, source?.Id == selected.Id ? null : source?.Id, selected.Id, orientation);
+                RefreshMinimumSizes(active, canvas);
+                PaneTree.Split(canvas, source?.Id == selected.Id ? null : source?.Id, selected.Id, orientation, entireCanvas);
             }, [selected]);
             if (success) FocusPaneCore(selected.Id);
         });
@@ -106,7 +108,7 @@ public sealed partial class SessionManager
     {
         if (!FindFocusedPane(handle, out var entry, out var canvas)) return;
         if (canvas.ZoomedLeafId != null && !PaneTransaction(() => canvas.ZoomedLeafId = null)) return;
-        var next = PaneTree.Neighbor(canvas, entry.Id, direction, ActiveSession!.Windows.ToDictionary(w => w.Id, w => w.LastFocusedUtc));
+        var next = PaneTree.Neighbor(LiveCanvas(ActiveSession!, canvas), entry.Id, direction, ActiveSession!.Windows.ToDictionary(w => w.Id, w => w.LastFocusedUtc));
         if (next is { } id) FocusPaneCore(id); else Error("No pane in that direction.");
     });
 
@@ -162,8 +164,32 @@ public sealed partial class SessionManager
 
     public void ReapplyPaneLayouts() => Change(() => ReapplyVisiblePanes());
 
+    public void BeginPaneMoveSize(long handle)
+    {
+        var entry = ActiveSession?.Windows.FirstOrDefault(w => w.Handle == handle && !w.IsMissing);
+        if (entry != null && CanvasFor(ActiveSession!, entry.Id) != null) _interactivePanes.Add(handle);
+    }
+
+    public void EndPaneMoveSize(long handle)
+    {
+        if (!_interactivePanes.Remove(handle)) return;
+        Change(() =>
+        {
+            if (!FindFocusedPane(handle, out var entry, out var canvas)) return;
+            var snapshot = Inspect(handle);
+            if (snapshot == null) return;
+            var bounds = snapshot.VisibleBounds ?? snapshot.Layout.Bounds;
+            PaneTransaction(() =>
+            {
+                if (canvas.ZoomedLeafId == null) PaneTree.ResizeToBounds(canvas, entry.Id, bounds);
+            }, forceReapply: true, onlyCanvases: new HashSet<Guid> { canvas.Id });
+        });
+    }
+
     public void HandleDisplayChange() => Change(() =>
     {
+        if(_windows.GetMonitors().Count==0){Error("Waiting for Windows to report available monitors.");return;}
+        RestoreReconnectedCanvases();
         MapPaneMonitors();
         ReapplyVisiblePanes();
     });
@@ -283,12 +309,13 @@ public sealed partial class SessionManager
         if (canvas == null || owner != ActiveSession || HidingPaused) return false;
         entry.Fingerprint.Title = snapshot.Fingerprint.Title;
         if (foreground && !IsZoomHidden(owner, entry.Id)) entry.LastFocusedUtc = DateTime.UtcNow;
+        if (_interactivePanes.Contains(entry.Handle)) return true;
         if (!_applyingPanes)
         {
             var desiredHidden = IsZoomHidden(owner, entry.Id);
             if (desiredHidden && snapshot.IsVisible) entry.HiddenByDeskMux = false;
             if (snapshot.IsVisible == desiredHidden || (!desiredHidden &&
-                (snapshot.Layout.Bounds != entry.Layout.Bounds || snapshot.Layout.ShowState != WindowShowState.Normal)))
+                ((entry.Layout.UseVisibleFrameBounds ? snapshot.VisibleBounds ?? snapshot.Layout.Bounds : snapshot.Layout.Bounds) != entry.Layout.Bounds || snapshot.Layout.ShowState != WindowShowState.Normal)))
             {
                 // Events are inspected after dispatch, and exact successful placements compare
                 // equal. A single debounced reflow handles user edits without swallowing rapid edits.
@@ -316,6 +343,7 @@ public sealed partial class SessionManager
     private void MapPaneMonitors()
     {
         var monitors = _windows.GetMonitors();
+        if(monitors.Count==0)return;
         foreach (var session in State.Sessions)
         {
             var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -323,10 +351,12 @@ public sealed partial class SessionManager
             foreach (var canvas in session.PaneCanvases.OrderByDescending(c => monitors.Any(m =>
                 !string.IsNullOrEmpty(c.MonitorId) ? m.StableId == c.MonitorId : m.DeviceName == c.MonitorDevice)).ToArray())
             {
+                var beforeMapping=PaneTree.Clone(canvas);
                 var mapped = MonitorMapper.Map(new WindowLayout { Bounds = canvas.MonitorWorkArea, MonitorDevice = canvas.MonitorDevice,
                     MonitorId = canvas.MonitorId, MonitorWorkArea = canvas.MonitorWorkArea, Dpi = canvas.Dpi }, monitors);
                 var key = string.IsNullOrEmpty(mapped.MonitorId) ? mapped.MonitorDevice : mapped.MonitorId;
                 var safe = monitors.Count > 0 && used.Add(key);
+                if(State.Settings.RestoreMonitorLayouts && (canvas.MonitorId!=mapped.MonitorId || canvas.MonitorDevice!=mapped.MonitorDevice) && !session.SuspendedPaneCanvases.Any(c=>c.Id==canvas.Id)) session.SuspendedPaneCanvases.Add(beforeMapping);
                 canvas.MonitorDevice = mapped.MonitorDevice; canvas.MonitorId = mapped.MonitorId;
                 canvas.MonitorWorkArea = mapped.MonitorWorkArea; canvas.Dpi = mapped.Dpi;
                 if (safe)
@@ -350,9 +380,28 @@ public sealed partial class SessionManager
                     }
                     else entry.Layout = floating;
                 }
+                if(State.Settings.RestoreMonitorLayouts && !session.SuspendedPaneCanvases.Any(c=>c.Id==canvas.Id)) session.SuspendedPaneCanvases.Add(beforeMapping);
                 session.PaneCanvases.Remove(canvas);
                 Error("A pane canvas no longer fits an available monitor. Its windows were released to reachable floating layouts.");
             }
+        }
+    }
+
+    private void RestoreReconnectedCanvases()
+    {
+        if(!State.Settings.RestoreMonitorLayouts)return;
+        var monitors=_windows.GetMonitors();
+        foreach(var session in State.Sessions)
+        foreach(var saved in session.SuspendedPaneCanvases.ToArray()) {
+            var monitor=monitors.FirstOrDefault(m=>!string.IsNullOrEmpty(saved.MonitorId)?m.StableId==saved.MonitorId:m.DeviceName==saved.MonitorDevice);
+            if(monitor==null || session.PaneCanvases.Any(c=>c.MonitorDevice==monitor.DeviceName))continue;
+            var migrated=session.PaneCanvases.FirstOrDefault(c=>c.Id==saved.Id);
+            var restored=PaneTree.Clone(migrated??saved);restored.MonitorDevice=monitor.DeviceName;restored.MonitorWorkArea=monitor.WorkArea;restored.Dpi=monitor.Dpi;restored.ZoomedLeafId=null;
+            var already=session.PaneCanvases.Where(c=>c.Id!=saved.Id).SelectMany(PaneTree.Leaves).Select(n=>n.WindowId!.Value).ToHashSet();
+            PaneTree.Validate(restored,session.Windows.Where(w=>!already.Contains(w.Id)).Select(w=>w.Id).ToHashSet());
+            try{RefreshMinimumSizes(session,restored);PaneTree.Calculate(restored);}catch(PaneLayoutException){continue;}
+            if(restored.RootNodeId!=null){if(migrated!=null)session.PaneCanvases.Remove(migrated);session.PaneCanvases.Add(restored);}
+            session.SuspendedPaneCanvases.Remove(saved);
         }
     }
 
@@ -368,7 +417,10 @@ public sealed partial class SessionManager
     private bool PaneTransaction(Action mutation, IEnumerable<ManagedWindow>? extra = null, bool forceReapply = false, ISet<Guid>? onlyCanvases = null)
     {
         if (_applyingPanes) return false;
+        foreach (var session in State.Sessions)
+            foreach (var canvas in session.PaneCanvases) RefreshMinimumSizes(session, canvas);
         var trees = State.Sessions.ToDictionary(s => s.Id, s => s.PaneCanvases.Select(PaneTree.Clone).ToList());
+        var suspended = State.Sessions.ToDictionary(s=>s.Id,s=>s.SuspendedPaneCanvases.Select(PaneTree.Clone).ToList());
         var memberships = State.Sessions.ToDictionary(s => s.Id, s => s.Windows.ToList());
         var backups = AllEntries().Concat(extra ?? []).DistinctBy(w => w.Id).Select(w =>
         {
@@ -382,6 +434,7 @@ public sealed partial class SessionManager
             mutation();
             RepairPaneTrees();
             var plans = (ActiveSession?.PaneCanvases ?? [])
+                .Where(c => !ActiveSession!.Windows.Any(w => _interactivePanes.Contains(w.Handle) && PaneTree.FindLeaf(c, w.Id) != null))
                 .Where(c => onlyCanvases == null || onlyCanvases.Contains(c.Id))
                 .Where(c => forceReapply || !SameCanvasState(c, trees[ActiveSession!.Id].FirstOrDefault(old => old.Id == c.Id)))
                 .Select(c => (Canvas: c, Live: LiveCanvas(ActiveSession!, c)))
@@ -417,11 +470,12 @@ public sealed partial class SessionManager
                 else { entry.Layout = desired; entry.Status = ""; }
             }
             if (failures.Count > 0) throw new InvalidOperationException(string.Join("; ", failures));
+            RememberLayout(trees,backups);
             return true;
         }
         catch (Exception ex)
         {
-            foreach (var session in State.Sessions) { session.PaneCanvases = trees[session.Id]; session.Windows = memberships[session.Id]; }
+            foreach (var session in State.Sessions) { session.PaneCanvases = trees[session.Id]; session.Windows = memberships[session.Id]; session.SuspendedPaneCanvases=suspended[session.Id]; }
             var rollbackErrors = new List<string>();
             foreach (var backup in backups.Where(b => _paneTouched.Contains(b.Entry.Id)).Reverse())
             {
@@ -455,6 +509,12 @@ public sealed partial class SessionManager
         var valid = session.Windows.Where(w => !w.IsMissing && !IsExcluded(w.Fingerprint)).Select(w => w.Id).ToHashSet();
         PaneTree.Validate(live, valid, new HashSet<Guid>());
         return live;
+    }
+
+    private void RefreshMinimumSizes(WorkspaceSession session, PaneCanvas canvas)
+    {
+        canvas.MinimumSizes = session.Windows.Where(w => !w.IsMissing)
+            .ToDictionary(w => w.Id, w => _windows.GetMinimumPaneSize(w));
     }
 
     private bool PaneShow(ManagedWindow entry) { _paneTouched?.Add(entry.Id); return Show(entry); }

@@ -99,6 +99,16 @@ internal static class StateSanitizer
         }
         state.Version = 3;
         state.Sessions ??= [];
+        state.LayoutPresets ??= [];
+        state.LayoutPresets.RemoveAll(p=>p==null);
+        foreach(var preset in state.LayoutPresets) {
+            preset.Name = string.IsNullOrWhiteSpace(preset.Name) ? "Layout" : preset.Name;
+            preset.Windows ??= []; preset.Windows.RemoveAll(w=>w==null);
+            preset.Windows=preset.Windows.DistinctBy(w=>w.WindowId).ToList();
+            foreach(var window in preset.Windows) { window.Fingerprint ??= new(); window.Layout ??= new(); window.Fingerprint.ExecutablePath ??= ""; }
+            preset.Canvases ??= []; preset.Canvases.RemoveAll(c=>c==null);
+            var used=new HashSet<Guid>(); foreach(var canvas in preset.Canvases) PaneTree.Validate(canvas,preset.Windows.Select(w=>w.WindowId).ToHashSet(),used);
+        }
         state.Settings ??= new AppSettings();
         state.Settings.ExcludedProcesses ??= [];
         state.Settings.ExcludedProcesses = state.Settings.ExcludedProcesses.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -113,6 +123,10 @@ internal static class StateSanitizer
         }
         state.Settings.Theme ??= new ThemeSettings();
         state.Settings.Theme.Preset = string.IsNullOrWhiteSpace(state.Settings.Theme.Preset) ? "System" : state.Settings.Theme.Preset.Trim();
+        state.Settings.CommandBindings ??= [];
+        if (Hotkeys.Validate(state.Settings) != null) state.Settings.CommandBindings.Clear();
+        state.Settings.PaneGuides ??= new PaneGuideSettings();
+        state.Settings.PaneGuides.Normalize();
         state.Settings.Theme.Custom ??= new ThemePalette();
         var theme = state.Settings.Theme.Custom;
         theme.Background = NormalizeColor(theme.Background, "#F5F7F9"); theme.Surface = NormalizeColor(theme.Surface, "#FFFFFF");
@@ -128,6 +142,8 @@ internal static class StateSanitizer
         {
             if (session.Id == Guid.Empty || !sessionIds.Add(session.Id)) { session.Id = Guid.NewGuid(); sessionIds.Add(session.Id); }
             session.Name = string.IsNullOrWhiteSpace(session.Name) ? "New session" : session.Name.Trim();
+            session.SuspendedPaneCanvases ??= [];
+            session.SuspendedPaneCanvases.RemoveAll(c=>c==null);
             session.Windows ??= [];
             session.Windows.RemoveAll(w => w is null);
             foreach (var window in session.Windows)
@@ -166,6 +182,8 @@ internal static class StateSanitizer
                 PaneTree.Validate(canvas, validWindows, paneWindows);
             }
             session.PaneCanvases.RemoveAll(c => c.RootNodeId is null);
+            foreach(var suspended in session.SuspendedPaneCanvases) PaneTree.Validate(suspended,validWindows);
+            session.SuspendedPaneCanvases.RemoveAll(c=>c.RootNodeId==null);
         }
         if (state.ActiveSessionId is { } active && !sessionIds.Contains(active)) state.ActiveSessionId = null;
         if (state.PreviousSessionId is { } previous && !sessionIds.Contains(previous)) state.PreviousSessionId = null;

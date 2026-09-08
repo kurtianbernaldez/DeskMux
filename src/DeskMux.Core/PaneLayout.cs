@@ -6,6 +6,8 @@ public enum PaneDirection { Left, Right, Up, Down }
 /// <summary>A persisted physical-pixel canvas. Nodes use IDs so malformed JSON cannot create object cycles.</summary>
 public sealed class PaneCanvas
 {
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Dictionary<Guid, PaneMinimumSize> MinimumSizes { get; set; } = [];
     public Guid Id { get; set; } = Guid.NewGuid();
     public string MonitorDevice { get; set; } = "";
     public string MonitorId { get; set; } = "";
@@ -44,7 +46,7 @@ public static class PaneTree
         Id = canvas.Id, MonitorDevice = canvas.MonitorDevice, MonitorId = canvas.MonitorId,
         MonitorWorkArea = canvas.MonitorWorkArea with { }, Dpi = canvas.Dpi,
         RootNodeId = canvas.RootNodeId, ZoomedLeafId = canvas.ZoomedLeafId,
-        Nodes = canvas.Nodes.Select(CloneNode).ToList()
+        Nodes = canvas.Nodes.Select(CloneNode).ToList(), MinimumSizes = new(canvas.MinimumSizes)
     };
 
     private static PaneNode CloneNode(PaneNode node) => new()
@@ -125,25 +127,26 @@ public static class PaneTree
     public static PaneNode? FindLeaf(PaneCanvas canvas, Guid windowId) => Leaves(canvas).FirstOrDefault(n => n.WindowId == windowId);
 
     /// <summary>Adds a root or replaces a source leaf with a split. Rejects an impossible split without changing the canvas.</summary>
-    public static PaneNode Split(PaneCanvas canvas, Guid? sourceWindowId, Guid targetWindowId, PaneOrientation orientation)
+    public static PaneNode Split(PaneCanvas canvas, Guid? sourceWindowId, Guid targetWindowId, PaneOrientation orientation, bool entireCanvas = false)
     {
         if (targetWindowId == Guid.Empty || !Enum.IsDefined(orientation)) throw InvalidTree();
         if (FindLeaf(canvas, targetWindowId) is not null) throw new PaneLayoutException("DuplicateWindow", "That window already occupies a pane.");
         var draft = Clone(canvas);
         var source = sourceWindowId is { } sourceId ? FindLeaf(draft, sourceId) : null;
-        if (source is null && draft.RootNodeId is not null) throw new PaneLayoutException("SourceMissing", "The source pane is no longer available.");
-        if (source is null && sourceWindowId is { } floatingId && floatingId != Guid.Empty && floatingId != targetWindowId)
+        if (source is null && draft.RootNodeId is not null && !entireCanvas) throw new PaneLayoutException("SourceMissing", "The source pane is no longer available.");
+        if (source is null && draft.RootNodeId is null && sourceWindowId is { } floatingId && floatingId != Guid.Empty && floatingId != targetWindowId)
         {
             source = new PaneNode { WindowId = floatingId };
             draft.Nodes.Add(source); draft.RootNodeId = source.Id;
         }
         var target = new PaneNode { WindowId = targetWindowId };
         draft.Nodes.Add(target);
-        if (source is null) draft.RootNodeId = target.Id;
+        var splitSource = entireCanvas ? draft.RootNodeId : source?.Id;
+        if (splitSource is null) draft.RootNodeId = target.Id;
         else
         {
-            var split = new PaneNode { Orientation = orientation, Ratio = .5, FirstChildId = source.Id, SecondChildId = target.Id };
-            ReplaceReference(draft, source.Id, split.Id);
+            var split = new PaneNode { Orientation = orientation, Ratio = .5, FirstChildId = splitSource, SecondChildId = target.Id };
+            ReplaceReference(draft, splitSource.Value, split.Id);
             draft.Nodes.Add(split);
         }
         draft.ZoomedLeafId = null;
@@ -201,6 +204,35 @@ public static class PaneTree
         return true;
     }
 
+    /// <summary>Moves shared dividers touched by a native edge resize; outer canvas edges stay fixed.</summary>
+    public static bool ResizeToBounds(PaneCanvas canvas, Guid windowId, PixelRect requested)
+    {
+        var leaf = FindLeaf(canvas, windowId);
+        if (leaf is null) return false;
+        var geometry = CalculateNodes(canvas);
+        var original = geometry[leaf.Id];
+        if (original.Width == requested.Width && original.Height == requested.Height) return false;
+        var path = Ancestors(canvas, leaf.Id).Reverse().ToArray();
+        var changed = false;
+        foreach (var edge in new[] {
+            (PaneOrientation.Vertical, original.X, requested.X),
+            (PaneOrientation.Vertical, original.X + original.Width, requested.X + requested.Width),
+            (PaneOrientation.Horizontal, original.Y, requested.Y),
+            (PaneOrientation.Horizontal, original.Y + original.Height, requested.Y + requested.Height) })
+        {
+            var (axis, before, after) = edge;
+            if (before == after) continue;
+            var split = path.FirstOrDefault(n => n.Orientation == axis &&
+                (axis == PaneOrientation.Vertical ? geometry[n.SecondChildId!.Value].X : geometry[n.SecondChildId!.Value].Y) == before);
+            if (split is null) continue;
+            var rect = geometry[split.Id];
+            var total = axis == PaneOrientation.Vertical ? rect.Width : rect.Height;
+            split.Ratio = Math.Clamp((after - (double)(axis == PaneOrientation.Vertical ? rect.X : rect.Y)) / total, 0, 1);
+            changed = true;
+        }
+        return changed;
+    }
+
     /// <summary>Returns full, unzoomed layouts without mutating the tree or saved ratios.</summary>
     public static IReadOnlyDictionary<Guid, WindowLayout> Calculate(PaneCanvas canvas)
     {
@@ -210,7 +242,7 @@ public static class PaneTree
         {
             var layout = new WindowLayout
             {
-                Bounds = geometry[leaf.Id], ShowState = WindowShowState.Normal,
+                Bounds = geometry[leaf.Id], ShowState = WindowShowState.Normal, UseVisibleFrameBounds = true,
                 MonitorDevice = canvas.MonitorDevice, MonitorId = canvas.MonitorId,
                 MonitorWorkArea = canvas.MonitorWorkArea with { }, Dpi = canvas.Dpi > 0 ? canvas.Dpi : 96
             };
@@ -272,7 +304,7 @@ public static class PaneTree
         return path;
     }
 
-    private static Dictionary<Guid, PixelRect> CalculateNodes(PaneCanvas canvas)
+    public static Dictionary<Guid, PixelRect> CalculateNodes(PaneCanvas canvas)
     {
         var result = new Dictionary<Guid, PixelRect>();
         if (canvas.RootNodeId is null) return result;
@@ -319,7 +351,8 @@ public static class PaneTree
             if (node.IsLeaf)
             {
                 if (node.WindowId == Guid.Empty || node.FirstChildId.HasValue || node.SecondChildId.HasValue) throw InvalidTree();
-                size = (MinimumWidth, MinimumHeight);
+                var minimum = canvas.MinimumSizes.GetValueOrDefault(node.WindowId!.Value);
+                size = (Math.Max(MinimumWidth, minimum?.Width ?? 0), Math.Max(MinimumHeight, minimum?.Height ?? 0));
             }
             else
             {

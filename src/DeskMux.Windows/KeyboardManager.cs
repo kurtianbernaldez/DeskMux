@@ -23,7 +23,10 @@ public sealed class KeyboardManager : IDisposable
     private volatile bool _commandMode;
     private volatile bool _pickerMode;
     private volatile bool _disposed;
+    private volatile bool _recording;
     private long _modeStarted;
+    private CommandGesture? _heldResize;
+    private long _resizeRepeated;
 
     public KeyboardManager(AppSettings settings, Action<Action> dispatch, ILog log)
     {
@@ -64,6 +67,7 @@ public sealed class KeyboardManager : IDisposable
         }
     }
 
+    public void SetRecording(bool recording) { _recording=recording; CancelCommandMode(); }
     public void CancelCommandMode() => _commandMode = false;
     public void BeginPickerMode() { _commandMode = false; _pickerMode = true; }
     public void EndPickerMode() => _pickerMode = false;
@@ -76,7 +80,7 @@ public sealed class KeyboardManager : IDisposable
 
     private KeyboardOptions SnapshotSettings() => new(
         _settings.PrefixVirtualKey, _settings.PrefixModifiers,
-        Math.Clamp(_settings.CommandTimeoutMs, 500, 10000), _settings.KeyboardPaused);
+        Math.Clamp(_settings.CommandTimeoutMs, 500, 10000), _settings.KeyboardPaused, Hotkeys.All.ToDictionary(d => Hotkeys.Get(_settings,d), d => d));
 
     private nint HandleKeyboard(int code, nuint message, nint dataPointer)
     {
@@ -91,18 +95,28 @@ public sealed class KeyboardManager : IDisposable
             var isUp = messageId is 0x0101 or 0x0105;
             if (isUp)
             {
+                if (_heldResize?.VirtualKey == key) _heldResize = null;
                 _pressed.Remove(key);
                 if (_suppressed.Remove(key)) return 1;
                 return NativeMethods.CallNextHookEx(_hook, code, message, dataPointer);
             }
 
             var firstDown = _pressed.Add(key);
-            if (_suppressed.Contains(key)) return 1;
+            if (_suppressed.Contains(key))
+            {
+                if (_heldResize is { } repeat && repeat.VirtualKey == key && !Volatile.Read(ref _options).Paused &&
+                    CurrentModifiers() == repeat.Modifiers && Stopwatch.GetElapsedTime(_resizeRepeated).TotalMilliseconds >= 90)
+                {
+                    _resizeRepeated = Stopwatch.GetTimestamp();
+                    Notify(() => Command?.Invoke(repeat));
+                }
+                return 1;
+            }
             if (!firstDown) return NativeMethods.CallNextHookEx(_hook, code, message, dataPointer);
 
+            if (_recording) return NativeMethods.CallNextHookEx(_hook, code, message, dataPointer);
             var modifiers = CurrentModifiers();
-            if (key == 0x7B && (modifiers & (PrefixModifiers.Control | PrefixModifiers.Alt | PrefixModifiers.Shift)) ==
-                (PrefixModifiers.Control | PrefixModifiers.Alt | PrefixModifiers.Shift))
+            if (Volatile.Read(ref _options).Bindings.TryGetValue(new(key,modifiers), out var emergency) && emergency.Global)
             {
                 _suppressed.Add(key);
                 _commandMode = false;
@@ -123,7 +137,7 @@ public sealed class KeyboardManager : IDisposable
                 }
                 _suppressed.Add(key);
                 var pickerKey = key is >= 0x61 and <= 0x69 ? key - 0x30 : key;
-                if (pickerKey is 0x26 or 0x28 or 0x4A or 0x4B or 0x0D or 0x1B or >= 0x31 and <= 0x39)
+                if (pickerKey is 0x09 or 0x26 or 0x28 or 0x4A or 0x4B or 0x0D or 0x1B or >= 0x31 and <= 0x39)
                     Notify(() => PickerKeyPressed?.Invoke(pickerKey));
                 return 1;
             }
@@ -147,21 +161,22 @@ public sealed class KeyboardManager : IDisposable
             if (_commandMode && !IsModifier(key))
             {
                 _commandMode = false;
-                if (key == 0x1B)
+                if (options.Bindings.TryGetValue(new(key,modifiers), out var cancel) && cancel.Id == "Cancel")
                 {
                     _suppressed.Add(key);
                     Notify(() => PrefixCancelled?.Invoke());
                     return 1;
                 }
-                var commandKey = key is >= 0x61 and <= 0x69 ? key - 0x30 : key;
+                var commandKey = !options.Bindings.ContainsKey(new(key,modifiers)) && key is >= 0x61 and <= 0x69 ? key - 0x30 : key;
                 var gesture = new CommandGesture(commandKey, modifiers);
-                if (IsCommand(gesture))
+                if (options.Bindings.TryGetValue(gesture, out var binding) && !binding.Global)
                 {
+                    if (binding.Repeat)
+                    { _heldResize = gesture; _resizeRepeated = Stopwatch.GetTimestamp(); }
                     _suppressed.Add(key);
                     // Arm immediately so a fast navigation key cannot slip through while
                     // the dispatcher is still constructing the W/M picker.
-                    if (commandKey is 0x57 or 0x4D or 0xDC or 0xBD ||
-                        commandKey == 0xDE && modifiers == PrefixModifiers.Shift) _pickerMode = true;
+                    if (binding.Picker) _pickerMode = true;
                     Notify(() => Command?.Invoke(gesture));
                     return 1;
                 }
@@ -177,21 +192,6 @@ public sealed class KeyboardManager : IDisposable
         return NativeMethods.CallNextHookEx(_hook, code, message, dataPointer);
     }
 
-    private static bool IsCommand(CommandGesture gesture)
-    {
-        // Do not interpret AltGr (Ctrl+Alt) or Windows shortcuts as pane commands.
-        // OEM_5 identifies the physical backslash/pipe key without assuming a translated character.
-        if ((gesture.Modifiers & (PrefixModifiers.Alt | PrefixModifiers.Windows)) != 0) return false;
-        if (gesture.VirtualKey is >= 0x25 and <= 0x28)
-            return gesture.Modifiers is PrefixModifiers.None or PrefixModifiers.Control;
-        if (gesture.VirtualKey == 0xDC)
-            return gesture.Modifiers is PrefixModifiers.None or PrefixModifiers.Shift;
-        if (gesture.VirtualKey == 0xBD) return gesture.Modifiers == PrefixModifiers.None;
-        if (gesture.VirtualKey is 0xDB or 0xDD or 0xDE) return gesture.Modifiers == PrefixModifiers.Shift;
-        return gesture.Modifiers == PrefixModifiers.None && gesture.VirtualKey is
-            >= 0x31 and <= 0x39 or 0x4A or 0x4B or 0x57 or 0x43 or 0x52 or 0x4D or
-            0x41 or 0x58 or 0x44 or 0x4C or 0x53 or 0x5A;
-    }
     private static bool IsModifier(int key) => key is 0x10 or 0x11 or 0x12 or 0x5B or 0x5C or >= 0xA0 and <= 0xA5;
     private static PrefixModifiers CurrentModifiers()
     {
@@ -236,7 +236,7 @@ public sealed class KeyboardManager : IDisposable
         GC.KeepAlive(_callback);
     }
 
-    private sealed record KeyboardOptions(int Key, PrefixModifiers Modifiers, int Timeout, bool Paused);
+    private sealed record KeyboardOptions(int Key, PrefixModifiers Modifiers, int Timeout, bool Paused, Dictionary<CommandGesture, HotkeyDefinition> Bindings);
 }
 
 internal sealed class BackgroundMessageLoop(string name, Action initialize, Action cleanup) : IDisposable
