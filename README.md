@@ -1,22 +1,170 @@
-# DeskMux
+<p align="center">
+  <img src="assets/deskmux-mark.svg" alt="DeskMux logo" width="120">
+</p>
 
-**tmux-inspired sessions and panes for native Windows GUI applications.**
+<h1 align="center">DeskMux</h1>
 
-[Website](https://deskmux.kurtian.dev) · [Downloads](https://github.com/kurtianbernaldez/DeskMux/releases) · [Issues](https://github.com/kurtianbernaldez/DeskMux/issues)
+<p align="center">
+  <strong>tmux-inspired sessions and panes for native Windows GUI applications.</strong>
+</p>
 
-DeskMux groups native application **windows** into named sessions. Arrange them in repeated horizontal and vertical splits, navigate between panes, resize, swap, and zoom with a short keyboard prefix. Fill panes with running windows or configured application launchers. Applications keep running; their windows return with their saved pane layout and focus history. Two Chrome windows can belong to different sessions even when they share a process.
+<p align="center">
+  <a href="https://github.com/kurtianbernaldez/DeskMux/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/kurtianbernaldez/DeskMux?label=release"></a>
+  <a href="https://github.com/kurtianbernaldez/DeskMux/actions/workflows/ci.yml"><img alt="CI status" src="https://img.shields.io/github/actions/workflow/status/kurtianbernaldez/DeskMux/ci.yml?branch=main&label=CI"></a>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/github/license/kurtianbernaldez/DeskMux"></a>
+  <img alt="Windows 11 x64" src="https://img.shields.io/badge/platform-Windows%2011%20x64-0078D4">
+</p>
 
-DeskMux is a C#/.NET 10 WPF tray application for Windows 11 x64, with Windows 10 compatibility where the underlying Windows APIs and .NET runtime support it. It positions ordinary top-level windows with documented Windows APIs. It does not embed applications, change their parent HWND, or use undocumented Virtual Desktop APIs.
+<p align="center">
+  <a href="https://deskmux.kurtian.dev">Website</a> ·
+  <a href="https://github.com/kurtianbernaldez/DeskMux/releases/latest">Download</a> ·
+  <a href="https://github.com/kurtianbernaldez/DeskMux/issues">Issues</a>
+</p>
+
+DeskMux turns ordinary Windows application **windows** into keyboard-driven workspaces. Group windows into named sessions, arrange them in nested panes, switch between workspaces, resize and swap panes, save layouts, and restore applications later.
+
+DeskMux manages ordinary top-level windows with documented Windows APIs. It does **not** embed applications, re-parent their HWNDs, or depend on undocumented Virtual Desktop APIs. Applications keep running normally, and separate windows from the same process can belong to different sessions.
+
+## Highlights
+
+- **tmux-style sessions for GUI apps** — switch between named workspaces using a configurable keyboard prefix.
+- **Nested panes** — split left/right or top/bottom, navigate, resize, swap, zoom, release panes to floating mode, and undo layout changes.
+- **Saved layouts and app restore** — reconnect running windows or relaunch missing applications into remembered pane positions.
+- **Multi-monitor aware** — maintain separate pane canvases per display and recover safely from monitor, work-area, resolution, and DPI changes.
+- **Keyboard-first, but not keyboard-only** — use the prefix commands for fast navigation and the manager UI for sessions, launchers, hotkeys, behavior, appearance, and recovery.
+- **Built for recoverability** — emergency show-all, crash recovery journals, transactional layout changes, and conservative window matching help avoid stranded hidden windows.
+- **Local-first** — sessions, settings, recovery data, and logs stay on the machine; DeskMux does not require a cloud service.
 
 ## Install
 
-Download **DeskMux-Setup-x64.exe** from the [latest GitHub release](https://github.com/kurtianbernaldez/DeskMux/releases/latest). The per-user installer does not require administrator rights and can create optional desktop and sign-in shortcuts. Upgrades preserve sessions and settings. Uninstalling asks before deleting local DeskMux data.
+Download **DeskMux-Setup-x64.exe** from the [latest release](https://github.com/kurtianbernaldez/DeskMux/releases/latest).
 
-The **portable ZIP** is for USB drives, test copies, and users who prefer no installation. Extract the complete ZIP and run `DeskMux.exe`. Its `portable.mode` marker makes DeskMux store sessions, settings, recovery data, and logs in the adjacent `Data` folder. Move or back up the whole folder together. Removing the marker returns it to normal `%LOCALAPPDATA%\DeskMux` storage; `--portable` enables the same behavior from any development package.
+The installer is per-user, does not require administrator rights, and can create optional desktop and sign-in shortcuts. Upgrades preserve sessions and settings.
 
-DeskMux is distributed through GitHub rather than the Microsoft Store. Release pages include `SHA256SUMS.txt` for download verification. Early builds may be unsigned until a Windows code-signing certificate is configured, so Windows SmartScreen can ask for confirmation.
+A **portable ZIP** is also available. Extract the complete folder and run `DeskMux.exe`. Portable mode stores sessions, settings, recovery data, and logs beside the application in its `Data` folder.
 
-## Build and run
+Release pages include `SHA256SUMS.txt` for download verification. Early builds may be unsigned until a Windows code-signing certificate is configured, so Windows SmartScreen can ask for confirmation.
+
+## Quick start
+
+1. Launch DeskMux. The session manager opens and a tray icon remains available.
+2. Keep the initial session or rename it.
+3. Focus an application window, press **Ctrl+B**, release it, then press **A** to add the window.
+4. Press **Ctrl+B**, release it, then press **\\** or **|** to split to the right and choose a window.
+5. Use **-** or **\"** for a pane below.
+6. Create another session with **Ctrl+B → C** and switch directly with **Ctrl+B → 1**, **2**, and so on.
+7. Add executables under **Manager → Launchers** if you want DeskMux to launch missing applications during pane creation or restore.
+
+Only windows you explicitly assign to DeskMux are controlled. Unmanaged windows remain visible and behave normally.
+
+## Keyboard commands
+
+The default prefix is **Ctrl+B**. Press and release the prefix, then press the command key. A small overlay appears near the top center of the foreground monitor.
+
+| After the prefix | Action |
+| --- | --- |
+| **1–9** | Switch directly to session 1–9 |
+| **J / K** | Next / previous session |
+| **W** | Open the keyboard session picker |
+| **C** | Create a session |
+| **R** | Rename the current session |
+| **M** | Move the focused window to another session |
+| **A** | Add the focused window |
+| **\\** or **&#124;** | Split left/right |
+| **-** or **\"** | Split top/bottom |
+| **Arrow keys** | Focus the neighboring pane |
+| **Ctrl+Arrow keys** | Resize the nearest matching split |
+| **{ / }** | Swap with the previous / next pane |
+| **Z** | Zoom / restore the focused pane |
+| **F** | Release the focused pane to floating mode |
+| **U** | Undo the previous pane layout change |
+| **X** | Remove the focused window from its pane and session |
+| **D** | Detach the current session |
+| **L** | Switch to the previously active session |
+| **S** | Open the session manager |
+| **Escape** | Cancel command mode |
+
+Hotkeys, the prefix, modifiers, and timeout can be changed from the **Hotkeys** page. Picker navigation uses arrows or J/K, Enter, number shortcuts, and Escape.
+
+## Panes, sessions, and layouts
+
+A **session** is a workspace. A **floating window** belongs to a session but remains freely movable. A **pane** belongs to a tiled tree managed within one monitor's work area.
+
+Each split divides only the currently focused pane, so layouts can be nested rather than limited to a fixed grid. DeskMux can:
+
+- split panes horizontally or vertically;
+- resize shared dividers;
+- navigate using pane geometry;
+- swap windows;
+- zoom one pane;
+- drag a pane onto another to swap;
+- release a pane back to floating mode;
+- save named layouts;
+- restore missing applications into saved layouts;
+- undo recent layout changes during the current run.
+
+A session can have one pane canvas per physical monitor alongside floating windows. DeskMux tracks monitor identity, work area, coordinates, and DPI, and keeps windows reachable when displays change.
+
+## Application launchers and restore
+
+Under **Manager → Launchers**, add an executable with an optional display name, arguments, working directory, and expected process name.
+
+When a launcher is used, DeskMux waits for an eligible top-level window rather than blindly grabbing the foreground application. Ambiguous matches require an explicit choice.
+
+**Restore apps** reconnects exact running matches first, launches missing applications when a launcher or executable fallback is available, and reapplies saved pane geometry. DeskMux intentionally prefers a missing window over attaching the wrong one when matching is ambiguous.
+
+Application documents, browser tabs, and unsaved work remain the responsibility of the application itself.
+
+## Recovery
+
+Press **Ctrl+Alt+Shift+F12** to immediately show all live managed windows and pause session hiding. The same command is available from the tray as **Show All Managed Windows**.
+
+You can also request recovery from PowerShell:
+
+```powershell
+.\artifacts\DeskMux-win-x64\DeskMux.exe --recover
+```
+
+Before hiding a window, DeskMux writes a recovery journal. A lightweight companion process watches the manager process and restores journaled windows if the manager exits unexpectedly. DeskMux also checks for stale recovery data on startup.
+
+Normal **Exit DeskMux** shows all managed windows before the process exits.
+
+## Data and privacy
+
+Normal installations store data under:
+
+```text
+%LOCALAPPDATA%\DeskMux
+```
+
+| File | Purpose |
+| --- | --- |
+| `sessions.json` | Sessions, launchers, settings, layouts, window fingerprints, and focus history |
+| `sessions.json.bak` | Last valid backup |
+| `recovery.json` | Recovery information for hidden windows |
+| `logs\deskmux-YYYYMMDD.jsonl` | Local structured logs |
+
+Portable builds store the same data under the adjacent `Data` folder.
+
+Window titles and executable paths can appear in session data and diagnostic logs. DeskMux does not send these files to a service.
+
+## Requirements and limitations
+
+DeskMux is a **C#/.NET 10 WPF** application built primarily for **Windows 11 x64**, with Windows 10 compatibility where the underlying Windows APIs and .NET runtime support it.
+
+Current limitations include:
+
+- Windows can prevent a normal process from inspecting, moving, hiding, or focusing elevated applications.
+- UAC secure desktop, sign-in/security UI, desktop/taskbar windows, DeskMux itself, and excluded system processes are not managed.
+- Some applications create popups, modal dialogs, replacement HWNDs, or custom windows that require special handling.
+- Applications can impose their own minimum size, placement, and foreground-activation restrictions.
+- Monitor names can change after driver, docking, or hardware changes.
+- Complete Start Menu discovery and cloud synchronization are not included.
+- Hiding a window does not pause its CPU, networking, audio, notifications, or background work.
+
+For the best behavior, run DeskMux and the applications it manages at the same ordinary privilege level.
+
+## Build and develop
 
 Install the **.NET 10 SDK for Windows x64**, then open PowerShell in the repository:
 
@@ -26,13 +174,16 @@ Install the **.NET 10 SDK for Windows x64**, then open PowerShell in the reposit
 .\scripts\run.ps1
 ```
 
-The scripts use `.tools\dotnet\dotnet.exe` when present, otherwise the `dotnet` SDK on `PATH`. No third-party NuGet packages are required. A local SDK is a development convenience and is not part of the distribution.
+To run the native integration checks on an **unlocked interactive Windows desktop**:
 
-To produce a self-contained x64 package, which includes the runtime:
+```powershell
+.\scripts\test.ps1 -Integration
+```
+
+To create a self-contained x64 package:
 
 ```powershell
 .\scripts\package.ps1
-.\artifacts\DeskMux-win-x64\DeskMux.exe
 ```
 
 To create the portable ZIP, checksums, and—when Inno Setup 6 is installed—the installer:
@@ -41,220 +192,55 @@ To create the portable ZIP, checksums, and—when Inno Setup 6 is installed—th
 .\scripts\build-release.ps1
 ```
 
-Release output is written to `artifacts\release`. The installer includes optional sign-in startup registration. GitHub’s tagged-release workflow builds the same assets and publishes them automatically. If repository secrets `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` are configured, it signs the application and installer before publishing.
-
-Equivalent SDK commands:
+Equivalent SDK commands use the repository's `.slnx` solution:
 
 ```powershell
-dotnet restore DeskMux.sln
-dotnet build DeskMux.sln -c Release --no-restore
+dotnet restore DeskMux.slnx
+dotnet build DeskMux.slnx -c Release --no-restore
 dotnet run --project tests/DeskMux.Tests -c Release
 dotnet run --project src/DeskMux.App -c Release
 dotnet publish src/DeskMux.App -c Release -r win-x64 --self-contained true -o artifacts/DeskMux-win-x64
 ```
 
-## First workspace
-
-1. Launch DeskMux. The session manager opens, and a tray icon stays available.
-2. Keep the initial DEV session or rename it. Focus an application window and press **Ctrl+B**, release, then **A** to add that window.
-3. Press **Ctrl+B**, release, then **\\** or **|** to open a pane to the right. Choose a running window with arrows and Enter. Use **-** or **\"** for a pane below. Each split halves only the focused pane: splitting the right half again creates widths of one half, one quarter, and one quarter. Splitting below the third pane divides only that third column.
-4. Add application executables on **Manager → Launchers**. They appear in the picker's **Launch new** section. DeskMux waits for an eligible window before changing the layout.
-5. Create another session with **Ctrl+B → C**, add its applications, and press **Ctrl+B → 1** or **2** to switch. Unmanaged windows remain visible; only windows you assigned to sessions are controlled.
-
-The session manager provides Sessions, Launchers, Hotkeys, Behavior, Appearance, and About pages. Use it to create, rename, reorder, delete, switch or restore sessions, inspect pane status, focus panes, release panes to floating mode, reapply layouts, capture windows, move entries, or remove membership. **Restore apps** reconnects windows already running, opens missing applications, and reapplies the saved pane tree. Pane details include position, split ancestry, zoom state, monitor, and calculated rectangle. Deleting a session offers moving its windows to the current session when possible or showing them and leaving them unmanaged. It never closes the applications.
-
-Closing the manager leaves the tray process and shortcuts running. To stop DeskMux, choose **Exit DeskMux** in the tray menu; every live managed window is shown before exit.
-
-## Keyboard commands
-
-Press and release the prefix, then press a command key. The default prefix is **Ctrl+B**. A small overlay appears near the top center of the foreground monitor. Command mode times out after **1.8 seconds** by default; Escape cancels it. Configure the prefix, modifiers, and timeout on the Hotkeys page.
-
-| After the prefix | Action |
-| --- | --- |
-| **1–9** | Switch directly to session 1–9 in list order |
-| **J / K** | Next / previous session, wrapping around |
-| **W** | Open the keyboard session picker, with the pane and floating applications in each session |
-| **C** | Create a session |
-| **R** | Rename the current session |
-| **M** | Move the focused window to a chosen session as a floating member |
-| **A** | Add the focused window; it joins an existing pane canvas on that monitor, otherwise it floats |
-| **\\** or **&#124;** | Open pane picker; split left/right with the new pane on the right |
-| **-** or **\"** | Open pane picker; split top/bottom with the new pane below |
-| **Arrow keys** | Focus the neighboring pane in that direction |
-| **Ctrl+Arrow keys** | Resize using the nearest matching split by approximately 5% |
-| **{ / }** | Swap the focused application with the previous / next pane |
-| **Z** | Zoom / restore the focused pane |
-| **X** | Remove the focused window from its pane and session, without closing it |
-| **D** | Detach the current session and return to the previous one when possible |
-| **L** | Switch to the previously active session |
-| **S** | Open the session manager |
-| **Escape** | Cancel command mode |
-
-In the session, move, and Open pane pickers, use **K / Up** to move up and **J / Down** to move down, **Enter** to select, **1–9** for quick selection, and **Escape** to cancel. Navigation is captured globally while a picker is open; no click is needed. Open pane has separate **Running windows** and **Launch new** sections. Every window is listed separately with its application, title, and session status. Session ordering determines session number shortcuts. **Prefix → L** switches to the last active session; **H** is unassigned. Arrows always operate on panes after the prefix; without a pane layout they show a concise notification.
-
-The physical backslash/pipe key is recognized as `VK_OEM_5`. Second-key commands retain modifiers to distinguish Ctrl+Arrow and shifted symbols. Other keyboard layouts may place quote and brace symbols differently; the backslash and minus alternatives remain available.
-
-## Panes and floating windows
-
-A **session** is a workspace. A **floating window** is a member whose position can be changed manually. A **pane** is a member in a tiled tree. Each **pane canvas** uses one monitor's work area, excluding taskbars. A **split node** divides its rectangle vertically (left/right) or horizontally (top/bottom); a **leaf node** references exactly one managed window. A window can belong to only one session and one leaf.
-
-The Open pane picker changes nothing until a window is selected and can be controlled. An unmanaged window joins the active session; an existing floating member becomes a pane. Selecting an existing pane focuses it without duplicating it. Selecting another session's window requests confirmation, then removes and collapses its old leaf before moving membership. Cancelling leaves all memberships and layouts unchanged.
-
-If the focused window is a pane, it becomes the first half of the split. A floating member can be promoted and split. If there is no valid source member, the chosen application becomes a root pane on its monitor. DeskMux never silently captures an unrelated focused window as the source.
-
-Adding a focused window with **A** automatically splits an existing pane canvas on that monitor so the new app is visible and the current panes make room. On a monitor without panes, it is added as a floating member.
-
-Panes align their visible edges, accounting for Windows' invisible resize borders. Dragging an app edge adjusts shared dividers when you release it, and neighboring panes reflow together. Moving a pane by its title bar snaps it back into its layout. Use **Release to floating** in the manager for free placement. **X / Remove from session** leaves the application visible and unmanaged. Other panes reflow while at least two remain; a lone survivor is released at its current rectangle so it stays movable. These operations never send an application a close command or terminate it.
-
-Navigation uses live pane rectangles and overlapping spans, skipping missing applications. Resizing finds the nearest ancestor split matching the requested axis and respects each application's native minimum size. Hold **Ctrl+Arrow** after the prefix to continue resizing. Splits readjust surrounding panes as needed to accommodate those minimums; a layout that cannot fit is rejected before any windows move. Swapping follows stable depth-first pane order and keeps focus on the same application after it moves. Zoom fills only the focused pane's monitor canvas and safely hides the other panes in that canvas. Pane navigation, splitting, resizing, and swapping restore the canvas from zoom before applying their operation. Other monitor canvases remain unaffected.
-
-## Appearance and themes
-
-Open **Manager → Appearance** to choose System, DeskMux Dark, Light, Dracula, Nord, Gruvbox, Solarized Dark, Solarized Light, or High Contrast. System follows the Windows app color preference and Windows contrast mode when DeskMux starts. Theme changes apply immediately to the manager, command overlay, session and pane pickers, progress windows, dialogs, buttons, lists, borders, and status colors.
-
-The Custom theme editor accepts `#RRGGBB` colors for the background, surfaces, sidebar, primary and muted text, accent, borders, and errors. Its palette preview updates as valid values are entered. **Save and apply custom** stores the palette locally in `sessions.json`; **Copy selected preset into custom** provides a starting point for editing.
-
-## Application launchers
-
-On **Manager → Launchers**, choose **Add executable**, set a display name, and optionally provide arguments, a working directory, or an expected process name. Edit, reorder, or remove profiles there. Profiles are persisted locally and appear in **Launch new**. DeskMux starts the executable directly with `ProcessStartInfo`; it does not compose an interactive shell command. Start Menu discovery is not included.
-
-Launch detection runs asynchronously for approximately 15 seconds using window show/foreground events and lightweight fallback enumeration. It prefers a new window from the launched process, then matching application identity, and can recognize a reused single-instance window brought to the foreground. If several windows remain plausible, a chooser requires an explicit selection. DeskMux excludes its own windows, protected applications, child/tool/shell windows, zero-sized windows, and transient splash candidates when a stable main window appears.
-
-Failed launch, timeout, or cancellation leaves the source layout unchanged. A successfully started application stays running even if no pane can be created. Cancel an in-progress pane request with its **Cancel pane request** button. Exiting DeskMux cancels detection and restores safely hidden windows.
-
-Applications opened through a configured launcher remember that launcher, including its arguments and working directory. Other managed windows use their recorded executable path as a restart fallback. Choose **Restore apps** on a session to reconnect exact running matches first and then open its missing applications one at a time. Ambiguous windows require an explicit choice. Enable **Behavior → Restore missing applications in the active session when DeskMux starts** for automatic restore; it is off by default.
-
-DeskMux uses a single low-level keyboard hook. While enabled, the configured prefix is intercepted globally and its command key is consumed. This means an application's normal Ctrl+B action is unavailable with the default prefix. Choose another prefix or **Pause Keyboard Shortcuts** in the tray when needed. The prefix overlay does not take focus from the application whose window you are adding or moving. Auto-repeat and command timeout are handled by the keyboard service.
-
-## Recovery and exit
-
-**Ctrl+Alt+Shift+F12** immediately shows all live managed windows and pauses session hiding. The same **Show All Managed Windows** command is in the tray. Choose **Resume sessions** when you are ready to manage visibility again. Keyboard pausing does not disable emergency recovery.
-
-You can also request recovery from another PowerShell window:
-
-```powershell
-.\artifacts\DeskMux-win-x64\DeskMux.exe --recover
-```
-
-This signals an existing DeskMux instance for that data directory, or starts DeskMux with all managed windows shown and hiding paused. **Exit DeskMux** also shows managed windows, saves state, and removes the keyboard and window event hooks.
-
-Before hiding a window, DeskMux writes an independent recovery journal. A lightweight companion process waits for the manager process to exit. If the manager crashes or is terminated, the companion restores journaled windows. On startup, DeskMux also checks for a journal left by a dead manager. Recovery checks HWND, process ID, process start time, and window class before touching a window, preventing a recycled handle from being mistaken for the original window.
-
-If both processes are terminated, launch DeskMux with `--recover`. Keep the data directory intact until recovery finishes. Recovery cannot override secure-desktop restrictions or an application that refuses window operations; these failures are logged and the journal is retained for another attempt.
-
-## Sessions and persistence
-
-Data is stored locally in `%LOCALAPPDATA%\DeskMux`:
-
-| File | Purpose |
-| --- | --- |
-| `sessions.json` | Ordered sessions, launch profiles, appearance settings, pane canvases/trees, zoom state, window fingerprints, layouts and focus history |
-| `sessions.json.bak` | Last valid backup for damaged-file recovery |
-| `recovery.json` | Durable information about windows hidden by the manager |
-| `logs\deskmux-YYYYMMDD.jsonl` | Structured local event and error log |
-
-Session changes are saved locally, and event-driven layout tracking debounces disk writes. Switching away captures the current placement before hiding windows. Saves use a temporary file and atomic replacement; malformed session files are preserved, and the valid backup is tried. Logs are limited in size and old daily logs are removed after 14 days. Settings provides a button to open the log directory. Window titles and executable paths may appear in session data and diagnostic records; none of these files is sent to a service.
-
-State version 3 adds restart links between managed windows and launch profiles, the optional startup restore setting, and persisted appearance themes. Earlier state files migrate automatically. Loaded pane trees are validated to remove cycles, orphan references, and duplicates. Missing application leaves remain in the saved tree so they can return to their exact panes, while the live layout temporarily collapses those leaves and does not reserve empty space.
-
-To use an isolated data directory for development:
-
-```powershell
-.\artifacts\DeskMux-win-x64\DeskMux.exe --data-dir C:\DeskMux\artifacts\my-test-profile
-.\artifacts\DeskMux-win-x64\DeskMux.exe --data-dir C:\DeskMux\artifacts\my-test-profile --recover
-```
-
-A second launch with the same data directory activates the existing instance. Distinct data directories are separate instances; avoid assigning the same application window to multiple instances.
-
-The portable edition stores the same files under its adjacent `Data` folder. DeskMux does not transfer application documents; restoring a session reopens applications from saved launcher or executable details, while each application remains responsible for recovering its own tabs and files.
-
-Each membership entry is one **HWND**, with its process metadata and layout. An unchanged running window is identified by handle, process ID/start time, executable identity, and class. When handles have changed, reassociation requires a unique match using application identity, class, and exact saved title. Ambiguous matches remain **missing** instead of grabbing another window. Restore can launch missing applications from a linked profile or executable fallback and asks you to choose when several windows match. Browser tabs and unsaved documents still depend on the application's own recovery behavior.
-
-## Multi-monitor layout
-
-A session can have one pane canvas per physical monitor, alongside floating windows. Pane calculation uses physical pixels, supports negative coordinates, divides odd pixel counts deterministically, and respects minimum dimensions. It preserves monitor device/stable identity, work area, and DPI. Display, work-area, resolution, and DPI changes remap and recalculate visible canvases. If a missing monitor would cause multiple trees to occupy the same remaining display, DeskMux releases the affected windows to reachable floating layouts and reports it instead of stacking trees.
-
-Floating layouts continue to preserve restored, maximized, or minimized state and use the existing monitor mapper. Multi-window pane changes save the previous tree and rectangles before applying the complete layout. Placement failure rolls back moved windows when possible; recovery failures are reported and applications are kept reachable.
-
-Focus history is tracked per window. Switching back attempts to focus the most recently used available, non-minimized member. Windows can deny foreground activation; in that case switching still restores the windows and records the focus failure.
+The build scripts use `.tools\dotnet\dotnet.exe` when present, otherwise the `dotnet` SDK on `PATH`. No third-party NuGet packages are required.
 
 ## Architecture
 
 | Project | Responsibility |
 | --- | --- |
-| `src/DeskMux.Core` | Session ownership, pane validation/tree operations/geometry/navigation/resize, launch candidate rules, switching, conservative matching, monitor mapping, persistence and logging |
-| `src/DeskMux.Windows` | Documented Win32 interop, safe placement/visibility/focus, asynchronous launch coordination, keyboard gestures and window event hooks, monitor discovery and crash recovery |
-| `src/DeskMux.App` | WPF lifetime, tray menu, command overlay, session/open-pane pickers, launch progress/ambiguity UI, launcher editor and manager pages |
-| `tests/DeskMux.Tests` | Dependency-free executable checks of core behavior with fake window services |
-| `tests/DeskMux.Integration` | Real Windows checks using native WPF fixture windows in a separate process |
+| `src/DeskMux.Core` | Sessions, pane trees, geometry, navigation, matching, monitor mapping, persistence, and logging |
+| `src/DeskMux.Windows` | Win32 interop, window placement/visibility/focus, launch coordination, keyboard and window hooks, monitor discovery, and recovery |
+| `src/DeskMux.App` | WPF lifetime, tray UI, command overlay, pickers, launcher editor, and manager pages |
+| `tests/DeskMux.Tests` | Dependency-free executable checks of core behavior |
+| `tests/DeskMux.Integration` | Real Windows integration checks using isolated WPF fixture windows |
 
-`SessionManager` depends on `IWindowSystem`, `IStateStore`, and `ILog`; it calculates and transactionally applies whole pane trees. Native placement is exposed through the window abstraction. Pure tree and geometry calculations have no WPF or Win32 dependency. `WindowMatcher` handles identity confidence and `MonitorMapper` handles display changes. `AppController` coordinates pickers and debounced updates. The app uses window events, with limited enumeration only while waiting for a launched application.
+The core logic is kept separate from WPF and Win32 where possible so pane geometry, matching, persistence, and session behavior can be validated without manipulating real desktop windows.
 
-## Validation
+## Releases
 
-Run the core checks with `scripts\test.ps1`. Run both core and native integration checks on an **unlocked interactive Windows desktop**:
+Pushes and pull requests run the application checks. Tags beginning with `v` build the Windows installer, portable ZIP, update ZIP, checksums, and GitHub Release.
 
-```powershell
-.\scripts\test.ps1 -Integration
-```
-
-The native suite creates three identifiable WPF windows in one separate process. It manages only those fixture HWNDs, checks cross-session ownership, real hide/show, process survival, normal/maximized/minimized layouts, transfer, closed-window cleanup, emergency recovery, and recovery after deliberately terminating an isolated test manager. Its fixture windows close when the suite finishes. It does not enumerate and capture the user's unrelated applications into sessions.
-
-The unit suite covers tree validation, splitting/collapse, geometry, navigation, resizing, swapping, zoom, transactional failures, running-window attachment, launch candidate selection, migration, session ownership, recovery, and monitor mapping. These executable suites return a failing exit code on assertion failure; no external test framework is needed.
-
-Manual acceptance requires an unlocked Windows desktop and actual applications. Automated fixture checks cannot prove compatibility with every application's custom behavior. Run this checklist with Notepad, File Explorer, Windows Terminal, a Chromium browser, a slow-starting application, a single-instance application, an elevated application, and multiple windows from one process:
-
-- Create sessions with C; split right/below repeatedly, including nested mixed orientations.
-- Select unmanaged and floating windows, select an existing pane, cancel the picker, and cancel/confirm a move from another session.
-- Configure launchers, launch a new application, reuse a single-instance window, and exercise slow start, ambiguous candidates, timeout, and cancellation.
-- Navigate all four directions, resize both axes, swap in both directions, and zoom/unzoom.
-- Remove a pane without closing its application; remove the final pane; move a pane with M and verify the destination member is floating.
-- Drag or resize a pane and verify it becomes floating and the manual placement persists; use Reapply layout only for panes still in a canvas.
-- Switch sessions while zoomed, restart DeskMux, use Restore apps, and verify relaunched windows return to their pane geometry and focus history.
-- Use two monitors with negative coordinates and mixed DPI; move taskbars to different edges; disconnect/reconnect a monitor and verify every window remains reachable.
-- Exercise foreground denial and elevated windows; confirm failed operations preserve membership/layout and leave applications running.
-- Trigger emergency recovery, terminate an isolated test instance while zoomed, exit normally while zoomed, and exit during launch detection. Verify no application is stranded hidden.
-
-## Permissions and current limitations
-
-- DeskMux runs without administrator rights. Windows may prevent a normal process from inspecting, hiding, moving, or focusing an elevated application. Failures are surfaced as window status, notifications, and logs. Prefer running the applications and DeskMux at the same ordinary privilege level.
-- UAC secure desktop, sign-in/security UI, desktop/taskbar windows, DeskMux itself, and excluded system processes are not managed. Configure additional excluded process names on the Behavior page. Exclusions apply to individual candidate windows through their owning process.
-- Some applications create independent popups, modal dialogs, replacement HWNDs, or auxiliary windows. Membership remains per explicit top-level window; a new window is not automatically added. Apps may make themselves visible again or impose their own size and focus constraints.
-- Floating minimized windows stay minimized by default. Enable **Behavior → Restore minimized windows when switching sessions** to restore them when selecting a session. Pane placement restores minimized/maximized windows so their tree rectangles can be applied. Hiding a window does not pause its CPU, networking, audio, notifications, or background work.
-- Monitor names can change after driver or docking changes. The conservative fallback keeps windows reachable but cannot always recover the exact original physical display identity.
-- Complete Start Menu discovery, configurable command bindings beyond the prefix, and cloud synchronization are not included. Release signing is active only when the repository owner configures a certificate in GitHub Actions.
-
-## Releases and website
-
-Pushes and pull requests run the application checks. Tags beginning with `v` create the Windows installer, portable ZIP, checksums, and a GitHub Release. For example:
+Example:
 
 ```powershell
 git tag v0.1.0-alpha.1
 git push origin v0.1.0-alpha.1
 ```
 
-The landing page is maintained separately in [kurtianbernaldez/deskmux-website](https://github.com/kurtianbernaldez/deskmux-website) and deployed through Coolify at `deskmux.kurtian.dev`. See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidance and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
+If `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` are configured in GitHub Actions, the release workflow signs the application and installer before publishing.
+
+The landing page is maintained separately in [kurtianbernaldez/deskmux-website](https://github.com/kurtianbernaldez/deskmux-website) and deployed at [deskmux.kurtian.dev](https://deskmux.kurtian.dev).
+
+## Contributing and security
+
+Contributions and bug reports are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidance and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
+
+If you report a bug, include the DeskMux version, Windows version, applications involved, monitor layout/scaling, reproduction steps, and expected versus actual behavior. Remove private window titles and paths from logs before attaching them publicly.
 
 ## Roadmap
 
-The separation of session state, native window operations, persistence and UI leaves room for a CLI, title/process rules, templates, startup scripts, alternate configuration formats, and plugins. Native windows, predictable pane layouts, and safe recovery remain the foundation.
+The current architecture leaves room for a CLI, title/process rules, templates, startup scripts, alternate configuration formats, and plugins. Native windows, predictable pane layouts, and safe recovery remain the foundation.
 
-### Pane guides
+## License
 
-Behavior → Pane guide visibility controls whether guides stay visible, appear during command mode and pane operations, appear briefly after changes, or stay hidden. Appearance → Pane guides provides theme-following or custom divider, focused-pane, and active-resize colors, with a live line preview, physical-pixel thickness, opacity, and fade delay. These settings are saved in `sessions.json`. Guides are click-through, stay scoped to each split container, and use independent monitor overlays; zoom displays only the focused pane outline.
-
-### Personalized shortcuts
-
-Open Hotkeys to edit the prefix and each command, including emergency recovery and cancellation. Save shortcuts applies the complete set after checking conflicts; Restore default shortcuts prepares the original bindings for saving. The default release shortcut is prefix → F: it releases the focused pane to floating while keeping its session membership. X removes the window from the session instead. Shortcuts persist in `sessions.json`. Picker navigation continues to use standard arrows, Enter and Escape.
-
-### Layout workflows and reliable updates
-
-- **Undo:** prefix → U restores the previous pane layout in the active session (up to 64 changes during this run). Release, resize, swap, zoom, and split can be undone. Apps remain running; undo does not relaunch closed windows.
-- **Drag:** move a pane by its title bar onto another pane and release to swap. A bright outline previews the target. Hold Alt when starting the drag to release to floating. Dragging outside a target keeps the existing layout. Edge resizing still adjusts dividers.
-- **Saved layouts:** expand Saved layouts in a session to save, apply, or delete a named arrangement. Select “Use selected layout when restoring apps” to apply it after Restore apps. Existing window identities are preserved; ambiguous replacement apps are skipped instead of guessed.
-- **Feedback:** session rows distinguish focused, missing, floating, and zoomed windows; floating windows are free to move. Pane guides are configurable in Behavior and Appearance.
-- **Shortcuts:** search the Hotkeys page, click a recording field and press a combination, or use the dropdowns. Import previews a profile before Save; export writes your current choices. Standard picker arrows/Enter/Escape remain conventional UI navigation.
-- **Monitors:** display changes are debounced, wake events trigger a reflow, and temporary empty monitor reports retain layouts. Displaced canvases can return on reconnect without overwriting another canvas. Disable automatic reconnect restoration in Behavior if preferred. Real mixed-DPI docking hardware still needs hands-on validation.
-- **Updates:** the title and About page identify the build and installation path. About → Install downloaded update verifies the files in a DeskMux ZIP, restarts in the same folder, and keeps the data directory. Copy failures restore previous binaries. Checksums detect corruption, not publisher identity; install ZIPs from trusted sources.
-
-`scripts/build.ps1` now refreshes **artifacts/DeskMux-win-x64** and its ZIP by default; use `-NoPackage` for a compile-only build. Packaging stages a complete build first, detects locked installed files, preserves portable Data, and keeps a rollback copy outside the package. Direct `dotnet build` remains compile-only. Close a running copy in that folder before refreshing it.
+DeskMux is released under the [MIT License](LICENSE).
