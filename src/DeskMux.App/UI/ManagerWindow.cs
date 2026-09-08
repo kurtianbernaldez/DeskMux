@@ -10,6 +10,7 @@ internal sealed class ManagerWindow : ThemedWindow
     private readonly ContentControl _content = new();
     private readonly TextBlock _status;
     private readonly TextBlock _prefixHint;
+    private readonly Button _updateButton;
     private readonly Dictionary<string, Button> _navigation = [];
     private ListBox? _sessionList;
     private ContentControl? _detail;
@@ -20,7 +21,7 @@ internal sealed class ManagerWindow : ThemedWindow
 
     public ManagerWindow(AppController controller)
     {
-        _controller = controller; Title = "DeskMux — " + AppInfo.BuildLabel; Width = 1080; Height = 720; MinWidth = 880; MinHeight = 580; WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        _controller = controller; Title = "DeskMux v" + AppInfo.Version; Width = 1080; Height = 720; MinWidth = 880; MinHeight = 580; WindowStartupLocation = WindowStartupLocation.CenterScreen;
         var root = new Grid { Background = UIHelpers.Brush("Background") }; root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(190) }); root.ColumnDefinitions.Add(new ColumnDefinition());
         var sidebar = new DockPanel { Background = UIHelpers.Brush("Sidebar"), LastChildFill = true };
         var bottom = new StackPanel { Margin = new Thickness(18) }; bottom.Children.Add(UIHelpers.Text("Always within reach", 12, UIHelpers.Brush("SidebarMuted")));
@@ -34,6 +35,11 @@ internal sealed class ManagerWindow : ThemedWindow
         }
         sidebar.Children.Add(nav); root.Children.Add(sidebar);
         var body = new DockPanel { Margin = new Thickness(30, 28, 30, 20) }; Grid.SetColumn(body, 1);
+        _updateButton = UIHelpers.Button("", () => _ = controller.InstallOnlineUpdateAsync(), true);
+        DockPanel.SetDock(_updateButton, Dock.Top); body.Children.Add(_updateButton);
+        controller.UpdateChanged += RefreshUpdate;
+        Closed += (_, _) => controller.UpdateChanged -= RefreshUpdate;
+        RefreshUpdate();
         var footer = new Border { BorderBrush = UIHelpers.Brush("Border"), BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(0, 12, 0, 0), Margin = new Thickness(0, 14, 0, 0) };
         _status = UIHelpers.Text("", 12, UIHelpers.Muted); _status.Margin = new Thickness(0); footer.Child = _status; DockPanel.SetDock(footer, Dock.Bottom); body.Children.Add(footer); body.Children.Add(_content); root.Children.Add(body); Content = root;
         Navigate("Sessions");
@@ -44,6 +50,12 @@ internal sealed class ManagerWindow : ThemedWindow
         foreach (var (name, button) in _navigation) button.Background = name == page ? UIHelpers.Brush("SidebarSelection") : Brushes.Transparent;
         _content.Content = page switch { "Launchers" => BuildLaunchers(), "Hotkeys" => BuildHotkeys(), "Behavior" => BuildBehavior(), "Appearance" => BuildAppearance(), "About" => BuildAbout(), _ => BuildSessions() };
         RefreshStatus();
+    }
+    private void RefreshUpdate()
+    {
+        _updateButton.Visibility = _controller.UpdateVersion == null ? Visibility.Collapsed : Visibility.Visible;
+        _updateButton.Content = _controller.DownloadingUpdate ? "Downloading update…" : "DeskMux " + _controller.UpdateVersion + " available — Restart to update";
+        _updateButton.IsEnabled = !_controller.DownloadingUpdate;
     }
     public void Refresh()
     {

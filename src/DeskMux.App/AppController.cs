@@ -1,7 +1,4 @@
 using System.Diagnostics;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Interop;
@@ -11,7 +8,7 @@ using DeskMux.App.UI;
 
 namespace DeskMux.App;
 
-public sealed class AppController : IDisposable
+public sealed partial class AppController : IDisposable
 {
     private readonly Application _app;
     private readonly KeyboardManager _keyboard;
@@ -124,6 +121,7 @@ public sealed class AppController : IDisposable
         if (ShouldRestoreAppsOnStartup(recoveryOnly, watchdogReady, Sessions.State) && Sessions.State.ActiveSessionId is { } restoreSession)
             _app.Dispatcher.BeginInvoke(() => RestoreSession(restoreSession, quietWhenComplete: true));
         Log.Write("application_started", "DeskMux started", new { Environment.ProcessId });
+        _ = MonitorUpdatesAsync();
     }
 
     internal static bool ShouldRestoreAppsOnStartup(bool recoveryOnly, bool watchdogReady, WorkspaceState state) =>
@@ -533,39 +531,6 @@ public sealed class AppController : IDisposable
     public void Notify(string title, string message) => _tray?.Notify(title, message);
     public void OpenDirectory(string path) { Directory.CreateDirectory(path); Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
     public void OpenUrl(string url) => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-    public async Task CheckForUpdatesAsync()
-    {
-        try
-        {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
-            client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("DeskMux", AppInfo.Version));
-            using var response = await client.GetAsync(AppInfo.ReleasesApiUrl, _lifetime.Token);
-            response.EnsureSuccessStatusCode();
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(_lifetime.Token));
-            if (!ReleaseVersion.TryParse(AppInfo.Version, out var current)) throw new InvalidOperationException("The installed version is invalid.");
-            string? latestTag = null, latestUrl = null; var latest = current;
-            foreach (var release in document.RootElement.EnumerateArray())
-            {
-                if (release.GetProperty("draft").GetBoolean()) continue;
-                var tag = release.GetProperty("tag_name").GetString();
-                if (!ReleaseVersion.TryParse(tag, out var candidate) || candidate.CompareTo(latest) <= 0) continue;
-                latest = candidate; latestTag = tag; latestUrl = release.GetProperty("html_url").GetString();
-            }
-            if (latestTag == null)
-            {
-                MessageBox.Show("You are running the newest available version (" + AppInfo.Version + ").", "DeskMux update", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-            if (MessageBox.Show("DeskMux " + latestTag.TrimStart('v', 'V') + " is available.\n\nOpen the download page?", "DeskMux update", MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes)
-                OpenUrl(latestUrl ?? AppInfo.ReleasesUrl);
-        }
-        catch (OperationCanceledException) when (_disposed) { }
-        catch (Exception exception)
-        {
-            Log.Write("update_check_failed", exception.Message);
-            MessageBox.Show("DeskMux could not check for updates.\n\n" + exception.Message, "DeskMux update", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
-    }
     public void Exit() { Dispose(); _app.Shutdown(); }
     public void Dispose()
     {

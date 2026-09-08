@@ -25,6 +25,7 @@ internal sealed class PrefixOverlay : ThemedWindow
         shortcuts.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
         shortcuts.ColumnDefinitions.Add(new ColumnDefinition());
         var commands = new[] {
+            ("Add", "Add window"),
             ("SplitRight", "Split right"), ("SplitBelow", "Split below"),
             ("Release", "Float pane"), ("Zoom", "Zoom / restore"),
             ("Undo", "Undo layout"), ("Picker", "Switch session"),

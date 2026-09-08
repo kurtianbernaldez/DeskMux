@@ -39,6 +39,10 @@ DeskMux manages ordinary top-level windows with documented Windows APIs. It does
 
 Download **DeskMux-Setup-x64.exe** from the [latest release](https://github.com/kurtianbernaldez/DeskMux/releases/latest).
 
+DeskMux checks for updates 30 seconds after startup and every six hours while running. When a complete stable release is available, use **Restart to update** in the manager or tray menu. DeskMux downloads and verifies the update, then asks before restarting; sessions and settings are preserved. Background check failures stay quiet, and **About → Check for updates** is available for a manual retry. Older builds without this feature need one manual update first.
+
+To deliver an update, publish a higher version tag with `DeskMux-update-x64.zip` and `SHA256SUMS.txt` attached to the same GitHub release. The release workflow produces both files. Drafts, prereleases, and releases missing either file are skipped. Checksums detect download corruption; release authenticity relies on the official GitHub repository and HTTPS.
+
 The installer is per-user, does not require administrator rights, and can create optional desktop and sign-in shortcuts. Upgrades preserve sessions and settings.
 
 A **portable ZIP** is also available. Extract the complete folder and run `DeskMux.exe`. Portable mode stores sessions, settings, recovery data, and logs beside the application in its `Data` folder.

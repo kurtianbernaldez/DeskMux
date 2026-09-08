@@ -6,9 +6,14 @@ internal static class UpdateInstaller
     internal static void Choose(AppController controller)
     {
         var dialog=new Microsoft.Win32.OpenFileDialog{Filter="DeskMux update (*.zip)|*.zip"};if(dialog.ShowDialog()!=true)return;
+        Install(controller, dialog.FileName);
+    }
+    internal static void Install(AppController controller, string archive, string? expectedVersion = null)
+    {
         try {
             var work=Path.Combine(controller.DataDirectory,"updates",Guid.NewGuid().ToString("N"));Directory.CreateDirectory(work);
-            var source=UpdatePackage.Extract(dialog.FileName,Path.Combine(work,"package"));var manifest=UpdatePackage.Verify(source);
+            var source=UpdatePackage.Extract(archive,Path.Combine(work,"package"));var manifest=UpdatePackage.Verify(source);
+            if (expectedVersion != null && (!ReleaseVersion.TryParse(manifest.Version, out var actual) || !ReleaseVersion.TryParse(expectedVersion, out var expected) || actual.CompareTo(expected) != 0)) throw new InvalidDataException("Update version does not match the release.");
             if(MessageBox.Show("Install DeskMux "+manifest.Version+" (built "+manifest.BuiltUtc+")?\n\nDeskMux will restart. Sessions and settings stay in "+controller.DataDirectory+". Only install packages from a source you trust.","Install update",MessageBoxButton.OKCancel)!=MessageBoxResult.OK)return;
             var target=Path.GetFullPath(AppContext.BaseDirectory);
             var probe=Path.Combine(target,".update-probe-"+Guid.NewGuid());File.WriteAllText(probe,"");File.Delete(probe);
