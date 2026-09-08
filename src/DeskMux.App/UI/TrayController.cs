@@ -1,5 +1,5 @@
 using System.Drawing;
-using System.Runtime.InteropServices;
+
 using Forms = System.Windows.Forms;
 
 namespace DeskMux.App.UI;
@@ -13,12 +13,8 @@ internal sealed class TrayController : IDisposable
     public TrayController(AppController controller)
     {
         _controller = controller; _menu = new Forms.ContextMenuStrip(); _menu.Opening += (_, _) => Refresh();
-        using var bitmap = new Bitmap(32, 32); using (var graphics = Graphics.FromImage(bitmap))
-        {
-            graphics.Clear(System.Drawing.Color.FromArgb(8, 126, 117)); using var pen = new System.Drawing.Pen(System.Drawing.Color.White, 2);
-            graphics.DrawRectangle(pen, 6, 7, 20, 18); graphics.DrawLine(pen, 16, 7, 16, 25); graphics.DrawLine(pen, 16, 16, 26, 16);
-        }
-        var handle = bitmap.GetHicon(); using (var original = Icon.FromHandle(handle)) _icon = (Icon)original.Clone(); DestroyIcon(handle);
+        using var resource = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/DeskMux.ico")).Stream;
+        _icon = new Icon(resource);
         _tray = new Forms.NotifyIcon { Icon = _icon, Text = "DeskMux", ContextMenuStrip = _menu, Visible = true };
         _tray.DoubleClick += (_, _) => controller.OpenManager(); Refresh();
     }
@@ -48,5 +44,5 @@ internal sealed class TrayController : IDisposable
     private Forms.ToolStripMenuItem Add(string text, Action action) { var item = new Forms.ToolStripMenuItem(text); item.Click += (_, _) => action(); _menu.Items.Add(item); return item; }
     public void Notify(string title, string message) { _tray.BalloonTipTitle = title; _tray.BalloonTipText = message.Length > 240 ? message[..240] : message; _tray.ShowBalloonTip(4500); }
     public void Dispose() { _tray.Visible = false; _tray.Dispose(); _menu.Dispose(); _icon.Dispose(); }
-    [DllImport("user32.dll")] private static extern bool DestroyIcon(nint icon);
+
 }
