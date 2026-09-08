@@ -17,6 +17,7 @@
 
 <p align="center">
   <a href="https://deskmux.kurtian.dev">Website</a> ·
+  <a href="https://deskmux.kurtian.dev/#demo">Demo</a> ·
   <a href="https://github.com/kurtianbernaldez/DeskMux/releases/latest">Download</a> ·
   <a href="https://github.com/kurtianbernaldez/DeskMux/issues">Issues</a>
 </p>
