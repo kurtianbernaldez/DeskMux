@@ -299,6 +299,7 @@ failed += GuideTests.Run();
 failed += HotkeyTests.Run();
 failed += WorkflowTests.Run();
 failed += LaunchTests.Run();
+failed += OnlineUpdateTests.Run();
 return failed == 0 ? 0 : 1;
 
 static void TempDirectory(Action<string> test)

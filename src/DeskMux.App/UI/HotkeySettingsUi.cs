@@ -25,7 +25,7 @@ internal static class HotkeySettingsUi
             var section=new StackPanel(); section.Children.Add(UIHelpers.Text(label,14,bold:true));
             var row=new WrapPanel();
             var mods=new ComboBox {Width=230,ItemsSource=modifiers.Select(m=>m==PrefixModifiers.None?"None":m.ToString()).ToArray(),SelectedIndex=(int)current.Modifiers};
-            var key=new ComboBox {Width=160,ItemsSource=keys.Select(k=>KeyInterop.KeyFromVirtualKey(k).ToString()).ToArray(),SelectedIndex=Array.IndexOf(keys,current.VirtualKey)};
+            var key=new ComboBox {Width=160,ItemsSource=keys.Select(UIHelpers.KeyLabel).ToArray(),SelectedIndex=Array.IndexOf(keys,current.VirtualKey)};
             row.Children.Add(mods);row.Children.Add(key);section.Children.Add(row);panel.Children.Add(section);searchable.Add((label,section));
             setters.Add(g=>{mods.SelectedIndex=(int)g.Modifiers;key.SelectedIndex=Array.IndexOf(keys,g.VirtualKey);});
             var record=new TextBox{Width=175,IsReadOnly=true,Text="Click to record keys",ToolTip="Focus here and press your shortcut"};row.Children.Add(record);

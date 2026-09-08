@@ -42,6 +42,8 @@ internal sealed class TrayController : IDisposable
         if (_controller.Sessions.HidingPaused) Add("Resume sessions", _controller.Resume);
         var pause = Add("Pause keyboard shortcuts", _controller.ToggleKeyboard); pause.Checked = _controller.Sessions.State.Settings.KeyboardPaused;
         _menu.Items.Add(new Forms.ToolStripSeparator()); Add("Exit DeskMux", _controller.Exit);
+        if (_controller.UpdateVersion != null)
+            Add(_controller.DownloadingUpdate ? "Downloading update…" : "Restart to update DeskMux", () => _ = _controller.InstallOnlineUpdateAsync()).Enabled = !_controller.DownloadingUpdate;
     }
     private Forms.ToolStripMenuItem Add(string text, Action action) { var item = new Forms.ToolStripMenuItem(text); item.Click += (_, _) => action(); _menu.Items.Add(item); return item; }
     public void Notify(string title, string message) { _tray.BalloonTipTitle = title; _tray.BalloonTipText = message.Length > 240 ? message[..240] : message; _tray.ShowBalloonTip(4500); }
