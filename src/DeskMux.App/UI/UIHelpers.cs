@@ -12,6 +12,7 @@ internal abstract class ThemedWindow : Window
         Foreground = ThemeManager.Brush("Ink");
         FontFamily = Application.Current.Resources["UiFont"] as FontFamily ?? new FontFamily("Segoe UI");
         FontSize = 14;
+        Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/Assets/DeskMux.ico"));
     }
 }
 
